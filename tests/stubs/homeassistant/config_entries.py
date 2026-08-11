@@ -1,5 +1,7 @@
 """Config entry stubs."""
 
+SOURCE_REAUTH = "reauth"
+
 
 class ConfigEntry:
     def __init__(self, entry_id="", title="", data=None, options=None, state=None):
