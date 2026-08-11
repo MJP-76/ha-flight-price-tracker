@@ -128,6 +128,9 @@ def _trips_from_entries(entries: list[dict]) -> list[dict]:
                     "best_price": f"sensor.{trip_id}_best_price",
                     "lowest_price": f"sensor.{trip_id}_lowest_price",
                     "offers_count": f"sensor.{trip_id}_offers_count",
+                    "avg_price": f"sensor.{trip_id}_avg_price",
+                    "price_percentile": f"sensor.{trip_id}_price_percentile",
+                    "historically_cheap": f"binary_sensor.{trip_id}_historically_cheap",
                     "target_met": (
                         f"binary_sensor.{trip_id}_target_met"
                         if trip.get("target_price")

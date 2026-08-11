@@ -10,7 +10,7 @@ from custom_components.flight_price_tracker.models import (
 )
 
 
-def _trip(target_price: float | None = 200.0) -> TripConfig:
+def _trip(target_price: float | None = 200.0, **kwargs) -> TripConfig:
     return TripConfig(
         id="lon_to_jfk",
         name="New York trip",
@@ -19,6 +19,7 @@ def _trip(target_price: float | None = 200.0) -> TripConfig:
         date_from=date(2026, 9, 1),
         date_to=date(2026, 9, 5),
         target_price=target_price,
+        **kwargs,
     )
 
 
@@ -105,3 +106,66 @@ class TestEvaluateUpdate:
         assert info["offer"]["price"] == 180
         assert info["currency"] == "GBP"
         assert info["trip_name"] == "New York trip"
+
+
+def _history(*prices: float) -> list[dict]:
+    return [{"date": f"2026-0{m + 1:02d}-01", "price": price} for m, price in enumerate(prices)]
+
+
+class TestHistoricallyCheapEvent:
+    def test_fires_when_current_price_in_cheapest_percentile(self) -> None:
+        info = {"price_history": _history(100, 150, 200, 250, 300, 350, 400)}
+        result = _run(_trip(), info, price=120)
+        assert result["fire_historically_cheap"] is True
+        assert result["info"]["historically_cheap"] is True
+        assert result["info"]["enough_data"] is True
+
+    def test_does_not_fire_without_enough_history(self) -> None:
+        info = {"price_history": _history(100, 200)}
+        result = _run(_trip(), info, price=80)
+        assert result["fire_historically_cheap"] is False
+        assert result["info"]["enough_data"] is False
+
+    def test_fires_only_once_until_not_cheap_again(self) -> None:
+        info = {"price_history": _history(100, 150, 200, 250, 300, 350, 400)}
+        first = _run(_trip(), info, price=120)
+        assert first["fire_historically_cheap"] is True
+
+        again = _run(_trip(), first["info"], price=140)
+        assert again["fire_historically_cheap"] is False
+        assert again["info"]["historically_cheap"] is True
+
+        cleared = _run(_trip(), first["info"], price=380)
+        assert cleared["fire_historically_cheap"] is False
+        assert cleared["info"]["historically_cheap"] is False
+
+        refired = _run(_trip(), cleared["info"], price=120)
+        assert refired["fire_historically_cheap"] is True
+
+    def test_trip_with_no_target_still_tracks_cheap(self) -> None:
+        info = {"price_history": _history(100, 150, 200, 250, 300, 350, 400)}
+        result = _run(_trip(target_price=None), info, price=110)
+        assert result["fire_historically_cheap"] is True
+
+    def test_defaults_history_from_info(self) -> None:
+        info = {"price_history": _history(100, 150, 200, 250, 300, 350, 400)}
+        result = _run(_trip(), info, price=120)
+        assert result["info"]["price_history_count"] == 7
+
+    def test_explicit_history_parameter_wins(self) -> None:
+        info = {"price_history": _history(400, 400, 400, 400, 400, 400, 400)}
+        result = evaluate_update(
+            _trip(), info, [_offer(120)], history=_history(100, 150, 200, 250, 300, 350, 400)
+        )
+        assert result["fire_historically_cheap"] is True
+        assert result["info"]["price_history_count"] == 7
+
+    def test_cheap_stats_exposed_in_state(self) -> None:
+        info = {"price_history": _history(100, 150, 200, 250, 300, 350, 400)}
+        result = _run(_trip(), info, price=120)["info"]
+        assert result["avg_price"] == 250.0
+        assert result["cheap_threshold"] is not None
+        assert result["current_percentile"] is not None
+        assert result["cheap_percentile"] == 0.25
+        assert result["price_min"] == 100.0
+        assert result["price_max"] == 400.0

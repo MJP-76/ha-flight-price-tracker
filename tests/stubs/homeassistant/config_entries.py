@@ -20,9 +20,10 @@ class ConfigFlowResult(dict):
 class ConfigFlow:
     domain = None
 
-    def __init_subclass__(cls, domain=None, **kwargs):
+    def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        cls.domain = domain
+        if "domain" in kwargs:
+            cls.domain = kwargs["domain"]
 
 
 class OptionsFlow:

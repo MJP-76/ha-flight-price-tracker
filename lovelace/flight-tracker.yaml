@@ -11,7 +11,8 @@
 #   {% if trip.target_met %} ... {% endif %}     conditional
 #
 # Each trip provides: name, origin, destination, date_from, date_to,
-# return_from, return_to, best_price, lowest_price, offers_count, target_met.
+# return_from, return_to, best_price, lowest_price, offers_count, avg_price,
+# price_percentile, historically_cheap, target_met.
 
 views:
   - title: Flights
@@ -46,6 +47,18 @@ views:
             entity: "{{ trip.offers_count }}"
             name: Offers
             icon: mdi:counter
+          - type: tile
+            entity: "{{ trip.avg_price }}"
+            name: Average
+            icon: mdi:chart-line
+          - type: tile
+            entity: "{{ trip.price_percentile }}"
+            name: Percentile
+            icon: mdi:percent
+          - type: tile
+            entity: "{{ trip.historically_cheap }}"
+            name: Historically cheap
+            icon: mdi:trending-down
 {% if trip.target_met %}
           - type: tile
             entity: "{{ trip.target_met }}"

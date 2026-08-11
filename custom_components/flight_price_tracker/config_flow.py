@@ -19,11 +19,13 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_API_KEY,
     CONF_BASE_URL,
+    CONF_CHEAP_PERCENTILE,
     CONF_CURRENCY,
     CONF_DATE_FROM,
     CONF_DATE_TO,
     CONF_DESTINATION,
     CONF_MAX_STOPS,
+    CONF_NOTIFY_ON_CHEAP,
     CONF_NOTIFY_ON_TARGET,
     CONF_ORIGIN,
     CONF_PASSENGERS,
@@ -36,14 +38,17 @@ from .const import (
     CONF_TRIP_TYPE,
     CONF_TRIPS,
     CURRENCIES,
+    DEFAULT_CHEAP_PERCENTILE,
     DEFAULT_CURRENCY,
     DEFAULT_MAX_STOPS,
     DEFAULT_PASSENGERS,
     DEFAULT_PROVIDER,
     DEFAULT_SCAN_INTERVAL_HOURS,
     DOMAIN,
+    MAX_CHEAP_PERCENTILE,
     MAX_SCAN_INTERVAL_HOURS,
     MAX_TRIPS,
+    MIN_CHEAP_PERCENTILE,
     MIN_SCAN_INTERVAL_HOURS,
     TRIP_TYPE_ONE_WAY,
     TRIP_TYPE_ROUND_TRIP,
@@ -144,6 +149,21 @@ def _trip_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
         vol.Required(
             CONF_NOTIFY_ON_TARGET,
             default=defaults.get(CONF_NOTIFY_ON_TARGET, True),
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            CONF_CHEAP_PERCENTILE,
+            default=defaults.get(CONF_CHEAP_PERCENTILE, DEFAULT_CHEAP_PERCENTILE),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=MIN_CHEAP_PERCENTILE,
+                max=MAX_CHEAP_PERCENTILE,
+                step=0.05,
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+        vol.Optional(
+            CONF_NOTIFY_ON_CHEAP,
+            default=defaults.get(CONF_NOTIFY_ON_CHEAP, True),
         ): selector.BooleanSelector(),
     }
     _add_required(

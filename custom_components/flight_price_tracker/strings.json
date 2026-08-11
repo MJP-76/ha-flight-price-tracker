@@ -23,7 +23,9 @@
           "max_stops": "Stops",
           "currency": "Currency",
           "target_price": "Target price",
-          "notify_on_target": "Notify when target is reached"
+          "notify_on_target": "Notify when target is reached",
+          "cheap_percentile": "Historically-cheap percentile (0.05-0.5)",
+          "notify_on_cheap": "Notify when the price is historically cheap"
         }
       },
       "return": {
@@ -91,7 +93,9 @@
           "max_stops": "Stops",
           "currency": "Currency",
           "target_price": "Target price",
-          "notify_on_target": "Notify when target is reached"
+          "notify_on_target": "Notify when target is reached",
+          "cheap_percentile": "Historically-cheap percentile (0.05-0.5)",
+          "notify_on_cheap": "Notify when the price is historically cheap"
         }
       },
       "edit_trip": {
@@ -108,7 +112,9 @@
           "max_stops": "Stops",
           "currency": "Currency",
           "target_price": "Target price",
-          "notify_on_target": "Notify when target is reached"
+          "notify_on_target": "Notify when target is reached",
+          "cheap_percentile": "Historically-cheap percentile (0.05-0.5)",
+          "notify_on_cheap": "Notify when the price is historically cheap"
         }
       },
       "remove_trip": {
@@ -160,6 +166,33 @@
   "selector": {
     "provider": {
       "options": {}
+    }
+  },
+  "entity": {
+    "sensor": {
+      "best_price": {
+        "name": "Best price"
+      },
+      "lowest_price": {
+        "name": "Lowest price"
+      },
+      "offers_count": {
+        "name": "Offers count"
+      },
+      "avg_price": {
+        "name": "Average price"
+      },
+      "price_percentile": {
+        "name": "Price percentile"
+      }
+    },
+    "binary_sensor": {
+      "target_met": {
+        "name": "Target met"
+      },
+      "historically_cheap": {
+        "name": "Historically cheap"
+      }
     }
   }
 }

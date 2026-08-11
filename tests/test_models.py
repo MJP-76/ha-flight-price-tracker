@@ -11,9 +11,14 @@ from custom_components.flight_price_tracker.models import (
     LocationResult,
     TripConfig,
     best_offer,
+    evaluate_cheap,
     make_trip_id,
+    percentile_rank,
+    percentile_threshold,
+    price_stats,
     slugify,
     trip_dict_from_form,
+    update_daily_history,
     validate_trip_form,
 )
 
@@ -286,3 +291,123 @@ class TestLocationResult:
         )
         assert location.code == "JFK"
         assert location.country == "United States"
+
+
+def _history(*prices: float) -> list[dict]:
+    return [{"date": f"2026-0{m + 1:02d}-01", "price": price} for m, price in enumerate(prices)]
+
+
+class TestUpdateDailyHistory:
+    def test_appends_new_day(self) -> None:
+        history = update_daily_history([], date(2026, 9, 1), 250.0)
+        assert history == [{"date": "2026-09-01", "price": 250.0}]
+
+    def test_keeps_lowest_for_same_day(self) -> None:
+        history = update_daily_history([], date(2026, 9, 1), 300.0)
+        updated = update_daily_history(history, date(2026, 9, 1), 250.0)
+        assert updated == [{"date": "2026-09-01", "price": 250.0}]
+        unchanged = update_daily_history(history, date(2026, 9, 1), 400.0)
+        assert unchanged == [{"date": "2026-09-01", "price": 300.0}]
+
+    def test_sorts_by_date(self) -> None:
+        history = update_daily_history([], date(2026, 9, 2), 200.0)
+        updated = update_daily_history(history, date(2026, 9, 1), 250.0)
+        assert [entry["date"] for entry in updated] == ["2026-09-01", "2026-09-02"]
+
+    def test_trims_to_max_days(self) -> None:
+        history: list[dict] = []
+        for day in range(1, 12):
+            history = update_daily_history(history, date(2026, 9, day), 100.0 + day, max_days=10)
+        assert len(history) == 10
+        assert history[0]["date"] == "2026-09-02"
+
+    def test_ignores_zero_prices(self) -> None:
+        history = update_daily_history([], date(2026, 9, 1), 250.0)
+        updated = update_daily_history(history, date(2026, 9, 2), 0.0)
+        assert len(updated) == 2
+
+
+class TestPercentileHelpers:
+    def test_threshold_empty(self) -> None:
+        assert percentile_threshold([], 0.25) is None
+
+    def test_threshold_single_value(self) -> None:
+        assert percentile_threshold([250.0], 0.25) == 250.0
+
+    def test_threshold_interpolation(self) -> None:
+        values = [100.0, 200.0, 300.0, 400.0]
+        assert percentile_threshold(values, 0.25) == 175.0
+        assert percentile_threshold(values, 0.5) == 250.0
+
+    def test_rank_empty(self) -> None:
+        assert percentile_rank([], 100.0) is None
+
+    def test_rank_none_value(self) -> None:
+        assert percentile_rank([100.0, 200.0], None) is None
+
+    def test_rank_fraction(self) -> None:
+        assert percentile_rank([100.0, 200.0, 300.0], 250.0) == 2 / 3
+
+    def test_rank_lowest(self) -> None:
+        assert percentile_rank([100.0, 200.0, 300.0], 100.0) == 1 / 3
+
+
+class TestPriceStats:
+    def test_empty(self) -> None:
+        stats = price_stats([])
+        assert stats["count"] == 0
+        assert stats["mean"] is None
+
+    def test_mean_and_bounds(self) -> None:
+        stats = price_stats([100.0, 200.0, 300.0])
+        assert stats["count"] == 3
+        assert stats["mean"] == 200.0
+        assert stats["min"] == 100.0
+        assert stats["max"] == 300.0
+        assert stats["stddev"] > 0
+
+    def test_single_value_stddev(self) -> None:
+        stats = price_stats([250.0])
+        assert stats["mean"] == 250.0
+        assert stats["stddev"] == 0.0
+
+
+class TestEvaluateCheap:
+    def test_not_enough_data(self) -> None:
+        result = evaluate_cheap(150.0, _history(100, 200), 0.25)
+        assert result["enough_data"] is False
+        assert result["historically_cheap"] is False
+
+    def test_cheap_when_below_threshold(self) -> None:
+        history = _history(100, 150, 200, 250, 300, 350, 400)
+        result = evaluate_cheap(120.0, history, 0.25)
+        assert result["enough_data"] is True
+        assert result["historically_cheap"] is True
+        assert result["price_history_count"] == 7
+        assert result["avg_price"] == 250.0
+        assert result["current_percentile"] is not None
+        assert result["current_percentile"] <= 0.25
+
+    def test_expensive_when_above_threshold(self) -> None:
+        history = _history(100, 150, 200, 250, 300, 350, 400)
+        result = evaluate_cheap(380.0, history, 0.25)
+        assert result["enough_data"] is True
+        assert result["historically_cheap"] is False
+
+    def test_no_current_price_never_cheap(self) -> None:
+        history = _history(100, 150, 200, 250, 300, 350, 400)
+        result = evaluate_cheap(None, history, 0.25)
+        assert result["historically_cheap"] is False
+
+    def test_none_history(self) -> None:
+        result = evaluate_cheap(150.0, None, 0.25)
+        assert result["enough_data"] is False
+        assert result["avg_price"] is None
+        assert result["price_history_count"] == 0
+
+    def test_percentile_config_respected(self) -> None:
+        history = _history(100, 150, 200, 250, 300, 350, 400)
+        result = evaluate_cheap(180.0, history, 0.5)
+        assert result["historically_cheap"] is True
+        strict = evaluate_cheap(180.0, history, 0.1)
+        assert strict["historically_cheap"] is False

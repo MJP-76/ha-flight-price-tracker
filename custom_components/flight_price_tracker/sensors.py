@@ -41,6 +41,8 @@ async def async_setup_entry(
                 BestPriceSensor(coordinator, trip.id, trip.currency, device),
                 LowestPriceSensor(coordinator, trip.id, trip.currency, device),
                 OffersCountSensor(coordinator, trip.id, device),
+                AveragePriceSensor(coordinator, trip.id, trip.currency, device),
+                PricePercentileSensor(coordinator, trip.id, device),
             ]
         )
     async_add_entities(entities)
@@ -148,3 +150,69 @@ class OffersCountSensor(FlightPriceSensor):
     @property
     def available(self) -> bool:
         return self.coordinator.last_update_success or "offers_count" in self._info
+
+
+class AveragePriceSensor(FlightPriceSensor):
+    """Mean of the daily prices recorded for the trip."""
+
+    _attr_translation_key = "avg_price"
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:chart-line"
+
+    def __init__(self, coordinator, trip_id, currency, device) -> None:
+        super().__init__(coordinator, trip_id, currency, device)
+        self._attr_unique_id = f"{DOMAIN}_{trip_id}_avg_price"
+
+    @property
+    def native_value(self) -> float | None:
+        return self._info.get("avg_price")
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        info = self._info
+        return {
+            "currency": self._attr_currency,
+            "history_count": info.get("price_history_count"),
+            "price_stddev": info.get("price_stddev"),
+            "price_min": info.get("price_min"),
+            "price_max": info.get("price_max"),
+            "cheap_threshold": info.get("cheap_threshold"),
+            "cheap_percentile": info.get("cheap_percentile"),
+            "enough_data": info.get("enough_data"),
+            "trip_id": self.trip_id,
+            "last_updated": info.get("last_updated"),
+        }
+
+
+class PricePercentileSensor(FlightPriceSensor):
+    """Where the current price sits in the observed price range (0-100)."""
+
+    _attr_translation_key = "price_percentile"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_unit_of_measurement = "%"
+    _attr_icon = "mdi:percent"
+
+    def __init__(self, coordinator, trip_id, device) -> None:
+        super().__init__(coordinator, trip_id, "", device)
+        self._attr_unique_id = f"{DOMAIN}_{trip_id}_price_percentile"
+
+    @property
+    def native_value(self) -> float | None:
+        rank = self._info.get("current_percentile")
+        return round(rank * 100, 1) if rank is not None else None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        info = self._info
+        return {
+            "currency": self._attr_currency,
+            "history_count": info.get("price_history_count"),
+            "cheap_threshold": info.get("cheap_threshold"),
+            "cheap_percentile": info.get("cheap_percentile"),
+            "enough_data": info.get("enough_data"),
+            "historically_cheap": info.get("historically_cheap"),
+            "avg_price": info.get("avg_price"),
+            "trip_id": self.trip_id,
+            "last_updated": info.get("last_updated"),
+        }

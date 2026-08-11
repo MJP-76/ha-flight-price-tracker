@@ -72,6 +72,15 @@ add_trip:
       name: Notify on target
       description: Fire the target-reached event and create a persistent notification.
       default: true
+    cheap_percentile:
+      name: Historically-cheap percentile
+      description: "Price percentile (0.05-0.5) that counts as historically cheap. 0.25 means the current price must be in the cheapest quarter of the daily history."
+      default: 0.25
+      example: 0.2
+    notify_on_cheap:
+      name: Notify on historically cheap
+      description: Fire the historically-cheap event and create a persistent notification.
+      default: true
 
 update_trip:
   name: Update trip
@@ -124,6 +133,12 @@ update_trip:
     notify_on_target:
       name: Notify on target
       description: Fire the target-reached event and create a persistent notification.
+    cheap_percentile:
+      name: Historically-cheap percentile
+      description: "Price percentile (0.05-0.5) that counts as historically cheap."
+    notify_on_cheap:
+      name: Notify on historically cheap
+      description: Fire the historically-cheap event and create a persistent notification.
 
 remove_trip:
   name: Remove trip

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -17,7 +17,12 @@ from .const import (
     DEFAULT_SCAN_INTERVAL_HOURS,
     DOMAIN,
 )
-from .models import TripConfig, evaluate_update
+from .models import (
+    TripConfig,
+    best_offer,
+    evaluate_update,
+    update_daily_history,
+)
 from .providers import FlightSearchProvider, ProviderAuthError, ProviderError
 
 _LOGGER = logging.getLogger(__name__)
@@ -27,6 +32,7 @@ STORAGE_VERSION = 1
 
 EVENT_TARGET_REACHED = f"{DOMAIN}_target_reached"
 EVENT_NEW_LOW = f"{DOMAIN}_new_low"
+EVENT_HISTORICALLY_CHEAP = f"{DOMAIN}_historically_cheap"
 
 
 class FlightPriceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
@@ -94,13 +100,20 @@ class FlightPriceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             info["last_updated"] = info.get("last_updated")
             return
 
-        result = evaluate_update(trip, info, offers)
+        offer = best_offer(offers)
+        history = info.get("price_history") or []
+        if offer is not None:
+            today = datetime.now(timezone.utc).astimezone().date()
+            history = update_daily_history(history, today, offer.price)
+        result = evaluate_update(trip, info, offers, history=history)
         self.data[trip.id] = result["info"]
 
         if result["new_low"] and result["offer"] is not None:
             self._fire_new_low(trip, result["offer"])
         if result["fire_target_reached"] and result["offer"] is not None:
             self._fire_target_reached(trip, result["offer"])
+        if result["fire_historically_cheap"]:
+            self._fire_historically_cheap(trip, result["info"])
 
     def _event_data(self, trip: TripConfig, offer) -> dict[str, Any]:
         return {
@@ -147,6 +160,49 @@ class FlightPriceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 trip.name,
                 offer.currency,
                 offer.price,
+            )
+
+    def _fire_historically_cheap(self, trip: TripConfig, info: dict[str, Any]) -> None:
+        data = {
+            "trip_id": trip.id,
+            "trip_name": trip.name,
+            "origin": trip.origin,
+            "destination": trip.destination,
+            "price": info.get("best_price"),
+            "currency": info.get("currency"),
+            "stops": info.get("max_stops"),
+            "current_percentile": info.get("current_percentile"),
+            "avg_price": info.get("avg_price"),
+            "cheap_threshold": info.get("cheap_threshold"),
+            "price_history_count": info.get("price_history_count"),
+            "cheap_percentile": info.get("cheap_percentile"),
+        }
+        self.hass.bus.async_fire(EVENT_HISTORICALLY_CHEAP, data)
+        if trip.notify_on_cheap:
+            from homeassistant.components import persistent_notification
+
+            price = info.get("best_price")
+            currency = info.get("currency", "GBP")
+            price_text = f"{price:,.0f}" if price is not None else "n/a"
+            message = (
+                f"{trip.origin} → {trip.destination} is **{currency} {price_text}** — "
+                f"in the cheapest {round((info.get('cheap_percentile') or 0.25) * 100)}% "
+                f"of the {info.get('price_history_count', 0)} daily prices we've seen "
+                f"(avg {currency} "
+                f"{info.get('avg_price'):,.0f})."
+            )
+            persistent_notification.async_create(
+                self.hass,
+                message,
+                title=f"Flight price is historically cheap: {trip.name}",
+                notification_id=f"{DOMAIN}_cheap_{trip.id}",
+            )
+            _LOGGER.info(
+                "Historically cheap for trip '%s' at %s %s (percentile %s)",
+                trip.name,
+                currency,
+                price,
+                info.get("current_percentile"),
             )
 
     async def _async_save(self) -> None:

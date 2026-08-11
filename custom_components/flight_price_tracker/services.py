@@ -13,11 +13,13 @@ from homeassistant.helpers import config_validation as cv
 from .const import (
     CONF_API_KEY,
     CONF_BASE_URL,
+    CONF_CHEAP_PERCENTILE,
     CONF_CURRENCY,
     CONF_DATE_FROM,
     CONF_DATE_TO,
     CONF_DESTINATION,
     CONF_MAX_STOPS,
+    CONF_NOTIFY_ON_CHEAP,
     CONF_NOTIFY_ON_TARGET,
     CONF_ORIGIN,
     CONF_PASSENGERS,
@@ -29,7 +31,9 @@ from .const import (
     CONF_TRIPS,
     DEFAULT_PROVIDER,
     DOMAIN,
+    MAX_CHEAP_PERCENTILE,
     MAX_TRIPS,
+    MIN_CHEAP_PERCENTILE,
 )
 from .models import make_trip_id, trip_dict_from_form, validate_trip_form
 from .providers import ProviderError, get_provider
@@ -67,6 +71,11 @@ _TRIP_FIELDS = {
     vol.Optional(CONF_CURRENCY): str,
     vol.Optional(CONF_TARGET_PRICE): vol.Coerce(float),
     vol.Optional(CONF_NOTIFY_ON_TARGET): bool,
+    vol.Optional(CONF_CHEAP_PERCENTILE): vol.All(
+        vol.Coerce(float),
+        vol.Range(min=MIN_CHEAP_PERCENTILE, max=MAX_CHEAP_PERCENTILE),
+    ),
+    vol.Optional(CONF_NOTIFY_ON_CHEAP): bool,
 }
 
 SERVICE_SCHEMA_ADD_TRIP = vol.Schema({vol.Optional(ATTR_ENTRY_ID): str, **_TRIP_FIELDS})

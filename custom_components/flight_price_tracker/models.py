@@ -14,6 +14,11 @@ from typing import Any
 DEFAULT_PASSENGERS = 1
 DEFAULT_MAX_STOPS = 2
 DEFAULT_CURRENCY = "GBP"
+DEFAULT_CHEAP_PERCENTILE = 0.25
+MIN_CHEAP_PERCENTILE = 0.05
+MAX_CHEAP_PERCENTILE = 0.5
+MIN_CHEAP_SAMPLES = 7
+MAX_HISTORY_DAYS = 365
 MAX_PASSENGERS = 9
 
 
@@ -34,6 +39,8 @@ class TripConfig:
     currency: str = DEFAULT_CURRENCY
     target_price: float | None = None
     notify_on_target: bool = True
+    cheap_percentile: float = DEFAULT_CHEAP_PERCENTILE
+    notify_on_cheap: bool = True
 
     @property
     def is_round_trip(self) -> bool:
@@ -54,6 +61,8 @@ class TripConfig:
             "currency": self.currency,
             "target_price": self.target_price,
             "notify_on_target": self.notify_on_target,
+            "cheap_percentile": self.cheap_percentile,
+            "notify_on_cheap": self.notify_on_cheap,
         }
 
     @classmethod
@@ -84,6 +93,10 @@ class TripConfig:
                 else None
             ),
             notify_on_target=bool(data.get("notify_on_target", True)),
+            cheap_percentile=float(
+                data.get("cheap_percentile", DEFAULT_CHEAP_PERCENTILE)
+            ),
+            notify_on_cheap=bool(data.get("notify_on_cheap", True)),
         )
 
 
@@ -288,6 +301,14 @@ def validate_trip_form(data: dict[str, Any]) -> dict[str, str]:
         except (TypeError, ValueError):
             errors["target_price"] = "target_positive"
 
+    cheap = data.get("cheap_percentile")
+    if cheap not in (None, ""):
+        try:
+            if not MIN_CHEAP_PERCENTILE <= float(cheap) <= MAX_CHEAP_PERCENTILE:
+                errors["cheap_percentile"] = "cheap_percentile_range"
+        except (TypeError, ValueError):
+            errors["cheap_percentile"] = "cheap_percentile_range"
+
     return_f = data.get("return_from")
     return_t = data.get("return_to")
     if return_f:
@@ -339,6 +360,10 @@ def trip_dict_from_form(
             else None
         ),
         "notify_on_target": bool(form.get("notify_on_target", True)),
+        "cheap_percentile": float(
+            form.get("cheap_percentile", DEFAULT_CHEAP_PERCENTILE)
+        ),
+        "notify_on_cheap": bool(form.get("notify_on_cheap", True)),
     }
 
 
@@ -353,16 +378,126 @@ def make_trip_id(origin: str, destination: str, existing_ids: list[str]) -> str:
     return candidate
 
 
-def evaluate_update(
-    trip: TripConfig, info: dict[str, Any], offers: list[FlightOffer]
-) -> dict[str, Any]:
-    """Pure per-poll update logic: compute new state, new-low and target events.
+def update_daily_history(
+    history: list[dict[str, Any]],
+    sample_date: date,
+    price: float,
+    max_days: int = MAX_HISTORY_DAYS,
+) -> list[dict[str, Any]]:
+    """Merge one observation into a daily-bucketed price history.
 
-    ``info`` is the previous per-trip state dict. Returns a dict with the new
-    ``info`` plus ``new_low`` and ``fire_target_reached`` booleans.
+    One entry per calendar day, holding the best (lowest) price seen that day.
+    The list stays sorted by date and is trimmed to the newest ``max_days``.
+    Pure: returns a new list and never mutates ``history``.
+    """
+    day = sample_date.isoformat()
+    entries: list[dict[str, Any]] = []
+    updated = False
+    for entry in history:
+        if entry["date"] == day:
+            entries.append({**entry, "price": min(float(entry["price"]), price)})
+            updated = True
+        else:
+            entries.append(dict(entry))
+    if not updated:
+        entries.append({"date": day, "price": float(price)})
+    entries.sort(key=lambda entry: entry["date"])
+    if len(entries) > max_days:
+        entries = entries[-max_days:]
+    return entries
+
+
+def percentile_threshold(values: list[float], percentile: float) -> float | None:
+    """The value at ``percentile`` (0-1) of sorted ``values`` (linear interp)."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    position = percentile * (len(ordered) - 1)
+    lower = int(position)
+    upper = lower + 1
+    frac = position - lower
+    return ordered[lower] + frac * (ordered[upper] - ordered[lower])
+
+
+def percentile_rank(values: list[float], value: float | None) -> float | None:
+    """Fraction of observed prices at or below ``value`` (0-1), or None."""
+    if not values or value is None:
+        return None
+    return sum(1 for item in values if item <= value) / len(values)
+
+
+def price_stats(prices: list[float]) -> dict[str, Any]:
+    """Summarise observed prices: count, mean, stddev, min, max."""
+    if not prices:
+        return {"count": 0, "mean": None, "stddev": None, "min": None, "max": None}
+    mean = sum(prices) / len(prices)
+    variance = sum((p - mean) ** 2 for p in prices) / max(len(prices) - 1, 1)
+    return {
+        "count": len(prices),
+        "mean": mean,
+        "stddev": variance**0.5,
+        "min": min(prices),
+        "max": max(prices),
+    }
+
+
+def evaluate_cheap(
+    current_price: float | None,
+    history: list[dict[str, Any]] | None,
+    cheap_percentile: float,
+    min_samples: int = MIN_CHEAP_SAMPLES,
+) -> dict[str, Any]:
+    """Pure 'historically cheap' analysis against the daily price history.
+
+    Returns a dict with the stats for sensors, whether the current price is
+    in the cheapest ``cheap_percentile`` of observed prices, and the price
+    threshold at that percentile. ``enough_data`` is False until enough days
+    have been observed to make the estimate meaningful.
+    """
+    prices = [float(entry["price"]) for entry in history or []]
+    stats = price_stats(prices)
+    threshold = percentile_threshold(prices, cheap_percentile)
+    enough_data = stats["count"] >= min_samples
+    rank = percentile_rank(prices, current_price)
+    cheap = bool(
+        enough_data
+        and current_price is not None
+        and threshold is not None
+        and current_price <= threshold
+    )
+    return {
+        "avg_price": stats["mean"],
+        "price_history_count": stats["count"],
+        "price_stddev": stats["stddev"],
+        "price_min": stats["min"],
+        "price_max": stats["max"],
+        "cheap_percentile": cheap_percentile,
+        "cheap_threshold": threshold,
+        "current_percentile": rank,
+        "enough_data": enough_data,
+        "historically_cheap": cheap,
+    }
+
+
+def evaluate_update(
+    trip: TripConfig,
+    info: dict[str, Any],
+    offers: list[FlightOffer],
+    history: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Pure per-poll update logic: new state, new-low, target and cheap events.
+
+    ``info`` is the previous per-trip state dict. ``history`` is the daily
+    price history to base the 'historically cheap' analysis on; it defaults to
+    the history already stored in ``info``. Returns a dict with the new
+    ``info`` plus ``new_low``, ``fire_target_reached`` and
+    ``fire_historically_cheap`` booleans.
     """
     now = datetime.now(timezone.utc)
     offer = best_offer(offers)
+    current_price = offer.price if offer else None
 
     prev_low = info.get("lowest_seen")
     lowest_seen = prev_low
@@ -384,6 +519,12 @@ def evaluate_update(
     )
     fire_target_reached = target_met and not bool(info.get("target_was_met"))
 
+    history = list(history or info.get("price_history") or [])
+    cheap = evaluate_cheap(current_price, history, trip.cheap_percentile)
+    fire_historically_cheap = cheap["historically_cheap"] and not bool(
+        info.get("cheap_was_met")
+    )
+
     new_info = {
         **info,
         "best_price": offer.price if offer else None,
@@ -396,6 +537,18 @@ def evaluate_update(
         "lowest_seen_offer": lowest_seen_offer,
         "target_met": target_met,
         "target_was_met": target_met,
+        "price_history": history,
+        "avg_price": cheap["avg_price"],
+        "price_history_count": cheap["price_history_count"],
+        "price_stddev": cheap["price_stddev"],
+        "price_min": cheap["price_min"],
+        "price_max": cheap["price_max"],
+        "cheap_percentile": trip.cheap_percentile,
+        "cheap_threshold": cheap["cheap_threshold"],
+        "current_percentile": cheap["current_percentile"],
+        "enough_data": cheap["enough_data"],
+        "historically_cheap": cheap["historically_cheap"],
+        "cheap_was_met": cheap["historically_cheap"],
         "trip_name": trip.name,
         "origin": trip.origin,
         "destination": trip.destination,
@@ -403,12 +556,14 @@ def evaluate_update(
         "passengers": trip.passengers,
         "target_price": trip.target_price,
         "notify_on_target": trip.notify_on_target,
+        "notify_on_cheap": trip.notify_on_cheap,
     }
 
     return {
         "info": new_info,
         "new_low": new_low,
         "fire_target_reached": fire_target_reached,
+        "fire_historically_cheap": fire_historically_cheap,
         "offer": offer,
     }
 
