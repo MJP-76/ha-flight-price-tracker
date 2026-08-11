@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# Editor
+.vscode/
+.idea/
+
+# Home Assistant
+.storage/
+*.log
+custom_components/flight_price_tracker/.DS_Store

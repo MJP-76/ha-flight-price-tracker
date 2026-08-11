@@ -1,0 +1,152 @@
+refresh:
+  name: Refresh flights
+  description: Immediately re-poll every trip in the entry, outside the normal scan interval.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Config entry to refresh. Defaults to the first Flight Price Tracker entry.
+
+add_trip:
+  name: Add trip
+  description: Add a trip to watch. Creates its sensors on the next refresh.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Config entry to add the trip to. Defaults to the first entry.
+    name:
+      name: Trip name
+      description: Friendly name for the trip. Defaults to "origin to destination".
+    origin:
+      name: Origin
+      description: Departure airport, IATA code or city name.
+      required: true
+      example: LON
+    destination:
+      name: Destination
+      description: Arrival airport, IATA code or city name.
+      required: true
+      example: JFK
+    trip_type:
+      name: Trip type
+      description: "one_way or round_trip."
+      default: one_way
+      example: round_trip
+    date_from:
+      name: Departure date
+      description: Earliest departure date (YYYY-MM-DD).
+      required: true
+      example: "2026-09-01"
+    date_to:
+      name: Latest departure
+      description: Latest departure date (YYYY-MM-DD).
+      required: true
+      example: "2026-09-05"
+    return_from:
+      name: Return earliest
+      description: Earliest return date (round trips only).
+      example: "2026-09-08"
+    return_to:
+      name: Return latest
+      description: Latest return date (round trips only).
+      example: "2026-09-12"
+    passengers:
+      name: Passengers
+      description: Number of travellers (1-9).
+      default: 1
+      example: 2
+    max_stops:
+      name: Max stops
+      description: Maximum number of stops allowed (0-3).
+      default: 2
+      example: 1
+    currency:
+      name: Currency
+      description: ISO currency code for the prices.
+      default: GBP
+      example: EUR
+    target_price:
+      name: Target price
+      description: If set, alert when the best price drops to or below this value.
+      example: 250
+    notify_on_target:
+      name: Notify on target
+      description: Fire the target-reached event and create a persistent notification.
+      default: true
+
+update_trip:
+  name: Update trip
+  description: Change any field of an existing trip.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Config entry containing the trip. Defaults to the first entry.
+    trip_id:
+      name: Trip ID
+      description: Identifier of the trip, e.g. lon_to_jfk.
+      required: true
+      example: lon_to_jfk
+    name:
+      name: Trip name
+      description: Friendly name for the trip.
+    origin:
+      name: Origin
+      description: Departure airport, IATA code or city name.
+    destination:
+      name: Destination
+      description: Arrival airport, IATA code or city name.
+    trip_type:
+      name: Trip type
+      description: "one_way or round_trip."
+    date_from:
+      name: Departure date
+      description: Earliest departure date (YYYY-MM-DD).
+    date_to:
+      name: Latest departure
+      description: Latest departure date (YYYY-MM-DD).
+    return_from:
+      name: Return earliest
+      description: Earliest return date (round trips only).
+    return_to:
+      name: Return latest
+      description: Latest return date (round trips only).
+    passengers:
+      name: Passengers
+      description: Number of travellers (1-9).
+    max_stops:
+      name: Max stops
+      description: Maximum number of stops allowed (0-3).
+    currency:
+      name: Currency
+      description: ISO currency code for the prices.
+    target_price:
+      name: Target price
+      description: If set, alert when the best price drops to or below this value.
+    notify_on_target:
+      name: Notify on target
+      description: Fire the target-reached event and create a persistent notification.
+
+remove_trip:
+  name: Remove trip
+  description: Remove a trip and its sensors.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Config entry containing the trip. Defaults to the first entry.
+    trip_id:
+      name: Trip ID
+      description: Identifier of the trip to remove.
+      required: true
+      example: lon_to_jfk
+
+resolve_location:
+  name: Resolve location
+  description: Resolve a city or airport name to the code the provider understands.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Entry whose provider should be used. Defaults to the first entry.
+    query:
+      name: Query
+      description: City or airport name or code to resolve.
+      required: true
+      example: "New York"

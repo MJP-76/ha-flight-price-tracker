@@ -1,0 +1,8 @@
+{
+  "name": "Flight Price Tracker",
+  "content_in_root": false,
+  "country": ["GB"],
+  "filename": "custom_components/flight_price_tracker/manifest.json",
+  "homeassistant": "2024.1.0",
+  "render_readme": true
+}

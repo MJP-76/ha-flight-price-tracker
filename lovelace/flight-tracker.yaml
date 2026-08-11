@@ -1,0 +1,62 @@
+# Flight Price Tracker dashboard (template)
+#
+# This is a template, not a finished dashboard. Render it with:
+#     python3 scripts/generate_dashboard.py [path/to/core.config_entries]
+# which substitutes real entity IDs and prints the dashboard YAML to stdout.
+#
+# The template uses a small documented subset of Jinja2 supported by the
+# generator (no external dependencies):
+#   {{ trip.name }}              variable interpolation (dotted paths)
+#   {% for trip in trips %} ... {% endfor %}     loop
+#   {% if trip.target_met %} ... {% endif %}     conditional
+#
+# Each trip provides: name, origin, destination, date_from, date_to,
+# return_from, return_to, best_price, lowest_price, offers_count, target_met.
+
+views:
+  - title: Flights
+    path: flights
+    type: sections
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Flight Price Tracker
+          - type: button
+            name: Refresh flights
+            icon: mdi:airplane-clock
+            tap_action:
+              action: perform-action
+              perform_action: flight_price_tracker.refresh
+{% for trip in trips %}
+      - type: grid
+        cards:
+          - type: heading
+            heading: "{{ trip.name }}"
+            heading_style: title
+          - type: tile
+            entity: "{{ trip.best_price }}"
+            name: Best price
+            icon: mdi:airplane
+          - type: tile
+            entity: "{{ trip.lowest_price }}"
+            name: Lowest seen
+            icon: mdi:chart-line
+          - type: tile
+            entity: "{{ trip.offers_count }}"
+            name: Offers
+            icon: mdi:counter
+{% if trip.target_met %}
+          - type: tile
+            entity: "{{ trip.target_met }}"
+            name: Target met
+            icon: mdi:target
+{% endif %}
+      - type: grid
+        cards:
+          - type: markdown
+            content: >
+              **{{ trip.origin }} → {{ trip.destination }}** ·
+              {{ trip.date_from }} → {{ trip.date_to }}
+              {% if trip.return_from %}· return {{ trip.return_from }} → {{ trip.return_to }}{% endif %}
+{% endfor %}

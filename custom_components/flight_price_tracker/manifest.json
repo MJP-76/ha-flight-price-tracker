@@ -1,0 +1,15 @@
+{
+  "domain": "flight_price_tracker",
+  "name": "Flight Price Tracker",
+  "codeowners": [
+    "@MJP-76"
+  ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/MJP-76/ha-flight-price-tracker",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/MJP-76/ha-flight-price-tracker/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

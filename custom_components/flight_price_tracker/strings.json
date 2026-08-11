@@ -1,0 +1,165 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Flight Price Tracker",
+        "description": "Track the best price for your trips. Pick a price provider and paste your API key (the mock provider needs no key and generates realistic demo prices).",
+        "data": {
+          "provider": "Price provider",
+          "api_key": "API key"
+        }
+      },
+      "trip": {
+        "title": "Trip details",
+        "description": "Describe your trip. Use IATA codes (LON, JFK) or city names.",
+        "data": {
+          "name": "Trip name",
+          "origin": "From",
+          "destination": "To",
+          "trip_type": "Trip type",
+          "date_from": "Departure date",
+          "date_to": "Latest departure",
+          "passengers": "Passengers",
+          "max_stops": "Stops",
+          "currency": "Currency",
+          "target_price": "Target price",
+          "notify_on_target": "Notify when target is reached"
+        }
+      },
+      "return": {
+        "title": "Return leg",
+        "description": "For a round trip, give the return window.",
+        "data": {
+          "return_from": "Return earliest",
+          "return_to": "Return latest"
+        }
+      },
+      "reauth": {
+        "title": "Re-authenticate Flight Price Tracker",
+        "description": "The stored API key stopped working. Provide a new key for the same provider.",
+        "data": {
+          "api_key": "API key"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Flight Price Tracker",
+        "description": "Change the provider or API key for this entry.",
+        "data": {
+          "provider": "Price provider",
+          "api_key": "API key",
+          "base_url": "Base URL (optional override)"
+        }
+      }
+    },
+    "error": {
+      "api_key_required": "This provider needs an API key.",
+      "invalid_api_key": "That key was rejected by the provider.",
+      "required": "Required",
+      "same_origin_destination": "Origin and destination cannot be the same.",
+      "invalid_date": "Enter a valid date.",
+      "date_to_before_from": "The latest departure must be on or after the departure date.",
+      "return_to_before_from": "The latest return must be on or after the earliest return.",
+      "return_before_departure": "The return leg must start after the departure window.",
+      "passengers_range": "Passengers must be between 1 and 9.",
+      "invalid_passengers": "Enter a number of passengers.",
+      "max_stops_range": "Stops must be between 0 and 3.",
+      "invalid_max_stops": "Choose a stop count.",
+      "target_positive": "The target price must be greater than 0.",
+      "scan_interval_range": "Scan interval must be between 1 and 168 hours."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Flight Price Tracker",
+        "description": "Manage trips for this entry. A trip is a route with dates to watch; prices refresh on the scan interval.",
+        "data": {
+          "action": "Action"
+        }
+      },
+      "add_trip": {
+        "title": "Add a trip",
+        "description": "Describe the trip to watch.",
+        "data": {
+          "name": "Trip name",
+          "origin": "From",
+          "destination": "To",
+          "trip_type": "Trip type",
+          "date_from": "Departure date",
+          "date_to": "Latest departure",
+          "passengers": "Passengers",
+          "max_stops": "Stops",
+          "currency": "Currency",
+          "target_price": "Target price",
+          "notify_on_target": "Notify when target is reached"
+        }
+      },
+      "edit_trip": {
+        "title": "Edit trip",
+        "description": "Change the details of this trip.",
+        "data": {
+          "name": "Trip name",
+          "origin": "From",
+          "destination": "To",
+          "trip_type": "Trip type",
+          "date_from": "Departure date",
+          "date_to": "Latest departure",
+          "passengers": "Passengers",
+          "max_stops": "Stops",
+          "currency": "Currency",
+          "target_price": "Target price",
+          "notify_on_target": "Notify when target is reached"
+        }
+      },
+      "remove_trip": {
+        "title": "Remove trip",
+        "description": "Remove the trip \"{trip_name}\" and its sensors. This cannot be undone.",
+        "data": {
+          "confirm": "Confirm removal"
+        }
+      },
+      "settings": {
+        "title": "Provider settings",
+        "description": "Provider, API key and how often prices are polled.",
+        "data": {
+          "provider": "Price provider",
+          "api_key": "API key",
+          "base_url": "Base URL (optional override)",
+          "scan_interval_hours": "Scan interval (hours)"
+        }
+      }
+    },
+    "error": {
+      "api_key_required": "This provider needs an API key.",
+      "invalid_api_key": "That key was rejected by the provider.",
+      "required": "Required",
+      "same_origin_destination": "Origin and destination cannot be the same.",
+      "invalid_date": "Enter a valid date.",
+      "date_to_before_from": "The latest departure must be on or after the departure date.",
+      "return_to_before_from": "The latest return must be on or after the earliest return.",
+      "return_before_departure": "The return leg must start after the departure window.",
+      "passengers_range": "Passengers must be between 1 and 9.",
+      "invalid_passengers": "Enter a number of passengers.",
+      "max_stops_range": "Stops must be between 0 and 3.",
+      "invalid_max_stops": "Choose a stop count.",
+      "target_positive": "The target price must be greater than 0.",
+      "scan_interval_range": "Scan interval must be between 1 and 168 hours."
+    },
+    "abort": {
+      "max_trips": "You have reached the maximum of 25 trips.",
+      "trip_added": "Trip added.",
+      "trip_updated": "Trip updated.",
+      "trip_removed": "Trip removed.",
+      "trip_missing": "That trip no longer exists."
+    }
+  },
+  "abort": {
+    "reauth_successful": "The entry was updated with the new key.",
+    "reconfigure_successful": "The entry was reconfigured."
+  },
+  "selector": {
+    "provider": {
+      "options": {}
+    }
+  }
+}
