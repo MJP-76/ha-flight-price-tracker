@@ -16,3 +16,5 @@ venv/
 .storage/
 *.log
 custom_components/flight_price_tracker/.DS_Store
+
+site/

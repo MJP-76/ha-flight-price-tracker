@@ -1,0 +1,53 @@
+site_name: Flight Price Tracker
+site_description: Home Assistant integration that alerts when your trips get cheap
+site_url: https://MJP-76.github.io/ha-flight-price-tracker/
+repo_url: https://github.com/MJP-76/ha-flight-price-tracker
+repo_name: MJP-76/ha-flight-price-tracker
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: teal
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: teal
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - tables
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed
+  - pymdownx.highlight
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Configuration: configuration.md
+  - Providers: providers.md
+  - Services & events: services.md
+  - Dashboard: dashboard.md
