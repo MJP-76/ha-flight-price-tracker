@@ -1,5 +1,7 @@
 # Flight Price Tracker
 
+**Documentation:** [https://MJP-76.github.io/ha-flight-price-tracker/](https://MJP-76.github.io/ha-flight-price-tracker/)
+
 A Home Assistant integration that watches the best price for your trips and
 alerts you when it drops to your target. Price sources are pluggable, so the
 integration itself does not depend on any single airline API.
