@@ -67,6 +67,7 @@
       "max_stops_range": "Stops must be between 0 and 3.",
       "invalid_max_stops": "Choose a stop count.",
       "target_positive": "The target price must be greater than 0.",
+      "cheap_percentile_range": "Percentile must be between 0.05 and 0.5.",
       "scan_interval_range": "Scan interval must be between 1 and 168 hours."
     }
   },
@@ -149,6 +150,7 @@
       "max_stops_range": "Stops must be between 0 and 3.",
       "invalid_max_stops": "Choose a stop count.",
       "target_positive": "The target price must be greater than 0.",
+      "cheap_percentile_range": "Percentile must be between 0.05 and 0.5.",
       "scan_interval_range": "Scan interval must be between 1 and 168 hours."
     },
     "abort": {
@@ -156,7 +158,8 @@
       "trip_added": "Trip added.",
       "trip_updated": "Trip updated.",
       "trip_removed": "Trip removed.",
-      "trip_missing": "That trip no longer exists."
+      "trip_missing": "That trip no longer exists.",
+      "settings_updated": "Settings updated."
     }
   },
   "abort": {
