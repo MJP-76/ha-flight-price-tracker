@@ -76,4 +76,4 @@ def get_provider(
 
 # Import providers so they register themselves. Importing at the bottom avoids
 # circular imports with the registry above.
-from . import mock, tequila  # noqa: F401
+from . import mock, serpapi, tequila  # noqa: F401

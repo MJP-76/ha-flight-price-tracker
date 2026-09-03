@@ -32,11 +32,17 @@ directory and restart Home Assistant.
 
 ### Get an API key
 
-The **Tequila** provider queries Kiwi.com. New developer keys are invite-only
-as of 2024; if you already have one it still works against
-`https://api.tequila.kiwi.com/v2`. Without a key, use the **Mock** provider —
-it generates deterministic demo prices so you can evaluate the integration
-without any API account.
+The integration ships with three providers:
+
+| Provider | Source | Free tier | Notes |
+| -------- | ------ | --------- | ----- |
+| **Kiwi.com Tequila** | Kiwi.com API | Depends on key | Keys are invite-only since 2024; existing keys still work. |
+| **Google Flights (SerpAPI)** | SerpAPI `google_flights` engine | 100–250 searches/month | No credit card required. Sign up at [serpapi.com](https://serpapi.com). |
+| **Mock** | Built-in | Unlimited | Deterministic demo prices for evaluation. |
+
+**Recommended for most users:** the **SerpAPI** provider. The free tier
+covers 100–250 searches per month — plenty for daily price tracking of a few
+trips. Sign up at [serpapi.com](https://serpapi.com) to get your API key.
 
 To add another provider, follow the guide below.
 
