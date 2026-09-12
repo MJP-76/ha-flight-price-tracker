@@ -8,9 +8,11 @@ entities.
 
 `lovelace/flight-tracker.yaml` is a **Jinja2 template** with per-trip
 placeholders (name, route, dates, and the `best_price`, `lowest_price`,
-`offers_count`, `avg_price`, `price_percentile` and `historically_cheap`
-entities). After setup, run the generator to render it with your trips and
-entity IDs:
+`offers_count`, `avg_price`, `price_percentile`, `typical_price` and
+`historically_cheap` entities; when a trip has class comparison enabled, a
+**Cheapest cabin** tile for `sensor.<trip>_class_comparison` is added
+automatically). After setup, run the generator to render it with your trips
+and entity IDs:
 
 ```bash
 python3 scripts/generate_dashboard.py
@@ -61,6 +63,24 @@ entities:
   - entity: sensor.best_price
     name: Best now
 ```
+
+## Showing the cabin class comparison
+
+When a trip has *Compare cabin classes* enabled, its
+`sensor.<trip>_class_comparison` carries per-class prices. A template card can
+render them as a compact table:
+
+```yaml
+type: markdown
+content: >
+  {% for klass, price in state_attr('sensor.class_comparison', 'prices').items() %}
+  - **{{ klass }}**: {{ price }} GBP
+  {% endfor %}
+  Cheapest: **{{ state_attr('sensor.class_comparison', 'cheapest_class') }}**
+```
+
+Or just add a tile: `entity: sensor.class_comparison` (the generator already
+does this for you).
 
 ## Suggested layout
 

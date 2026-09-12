@@ -28,11 +28,12 @@ custom_components/flight_price_tracker/
 └── translations/en.json
 
 tests/
-├── test_models.py             # validation, trip dicts, history, cheap analysis
+├── test_models.py             # validation, trip dicts, history, cheap analysis, class comparison
 ├── test_serpapi_provider.py   # params, offer parsing, round-trip merge, insights, errors
 ├── test_tequila_provider.py
 ├── test_mock_provider.py
 ├── test_evaluate_update.py    # coordinator update logic
+├── test_coordinator.py        # coordinator class-comparison searches
 ├── test_dashboard_generator.py
 └── stubs/homeassistant/       # minimal import stubs when HA isn't installed
 ```

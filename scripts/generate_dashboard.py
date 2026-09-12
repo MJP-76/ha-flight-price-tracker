@@ -132,6 +132,8 @@ def _trips_from_entries(entries: list[dict]) -> list[dict]:
                     "price_percentile": f"sensor.{trip_id}_price_percentile",
                     "typical_price": f"sensor.{trip_id}_typical_price",
                     "historically_cheap": f"binary_sensor.{trip_id}_historically_cheap",
+                    "compare_classes": bool(trip.get("compare_classes", False)),
+                    "class_comparison": f"sensor.{trip_id}_class_comparison",
                     "target_met": (
                         f"binary_sensor.{trip_id}_target_met"
                         if trip.get("target_price")
@@ -171,7 +173,13 @@ def main(argv: list[str] | None = None) -> None:
     path = _find_config_entries(args.config_entries)
     with open(path, encoding="utf-8") as handle:
         data = json.load(handle)
-    entries = data.get("data", []) if isinstance(data, dict) else data
+    if isinstance(data, dict):
+        container = data.get("data", [])
+        if isinstance(container, dict):
+            container = container.get("entries", [])
+    else:
+        container = data
+    entries = [e for e in container if isinstance(e, dict)]
 
     trips = _trips_from_entries(entries)
     if not trips:

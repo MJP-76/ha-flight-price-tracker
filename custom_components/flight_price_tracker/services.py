@@ -14,6 +14,7 @@ from .const import (
     CONF_API_KEY,
     CONF_BASE_URL,
     CONF_CHEAP_PERCENTILE,
+    CONF_COMPARE_CLASSES,
     CONF_CURRENCY,
     CONF_DATE_FROM,
     CONF_DESTINATION,
@@ -72,6 +73,7 @@ _TRIP_FIELDS = {
     vol.Optional(CONF_MAX_STOPS): vol.All(vol.Coerce(int), vol.Range(min=0, max=3)),
     vol.Optional(CONF_CURRENCY): str,
     vol.Optional(CONF_SEAT_CLASS): vol.In(SEAT_CLASSES),
+    vol.Optional(CONF_COMPARE_CLASSES): bool,
     vol.Optional(CONF_TARGET_PRICE): vol.Coerce(float),
     vol.Optional(CONF_NOTIFY_ON_TARGET): bool,
     vol.Optional(CONF_CHEAP_PERCENTILE): vol.All(
@@ -97,6 +99,7 @@ SERVICE_SCHEMA_UPDATE_TRIP = vol.Schema(
         vol.Optional(CONF_MAX_STOPS): vol.All(vol.Coerce(int), vol.Range(min=0, max=3)),
         vol.Optional(CONF_CURRENCY): str,
         vol.Optional(CONF_SEAT_CLASS): vol.In(SEAT_CLASSES),
+        vol.Optional(CONF_COMPARE_CLASSES): bool,
         vol.Optional(CONF_TARGET_PRICE): vol.Coerce(float),
         vol.Optional(CONF_NOTIFY_ON_TARGET): bool,
         vol.Optional(CONF_CHEAP_PERCENTILE): vol.All(

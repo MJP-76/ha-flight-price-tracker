@@ -69,6 +69,24 @@ Midpoint of Google's **typical price range** for the route and travel window
 | `google_history_count` | Number of Google price-history samples captured |
 | `best_price` | The live best price, for quick comparison |
 
+### `sensor.<trip>_class_comparison`
+Cheapest price across cabin classes for the trip's route and dates (created
+only when *Compare cabin classes* is enabled on the trip). The state is the
+cheapest class's price.
+
+| Attribute | Meaning |
+|---|---|
+| `cheapest_class` | The cabin class with the lowest price, e.g. `economy` |
+| `prices` | Best price per class, e.g. `{"economy": 1347, "business": 8150}` |
+| `classes` | Per-class offer details (airlines, flight numbers, stops, deep link) |
+| `currency` | Price currency |
+| `trip_id` / `last_updated` | Trip and timestamp of the comparison |
+
+Classes whose search failed are skipped rather than reported as £0. Turning
+the option off removes the sensor. See
+[Configuration](configuration.md#cabin-class-comparison) for the search-budget
+trade-off.
+
 ### `sensor.<trip>_departure_date`
 The trip's departure date (`device_class: date`).
 

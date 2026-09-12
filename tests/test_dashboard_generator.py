@@ -28,6 +28,7 @@ SAMPLE_ENTRIES = {
                         "return_from": None,
                         "return_to": None,
                         "target_price": 250,
+                        "compare_classes": True,
                     },
                     {
                         "id": "lon_to_ber",
@@ -81,10 +82,32 @@ class TestDashboardGenerator:
         assert "binary_sensor.lon_to_jfk_target_met" in output
         assert "binary_sensor.lon_to_ber_target_met" not in output
 
+    def test_class_comparison_conditional(self) -> None:
+        output = _render()
+        assert "sensor.lon_to_jfk_class_comparison" in output
+        assert "sensor.lon_to_ber_class_comparison" not in output
+
     def test_template_has_no_leftover_tags(self) -> None:
         output = _render()
         assert "{%" not in output
         assert "{{" not in output
+
+    def test_handles_nested_entries_layout(self) -> None:
+        nested = {"version": 1, "key": "x", "data": {"entries": SAMPLE_ENTRIES["data"]}}
+        tmp = os.path.join(os.path.dirname(__file__), ".sample_entries.json")
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(nested, handle)
+        try:
+            result = subprocess.run(
+                [sys.executable, SCRIPT, tmp],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        finally:
+            os.remove(tmp)
+        assert "sensor.lon_to_jfk_best_price" in result.stdout
+        assert "sensor.lon_to_jfk_class_comparison" in result.stdout
 
     def test_header_documentation(self) -> None:
         with open(TEMPLATE, encoding="utf-8") as handle:

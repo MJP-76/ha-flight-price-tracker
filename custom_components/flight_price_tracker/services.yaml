@@ -55,6 +55,15 @@ add_trip:
       description: ISO currency code for the prices.
       default: GBP
       example: EUR
+    seat_class:
+      name: Seat class
+      description: "Cabin class to price: economy, premium_economy, business or first."
+      default: economy
+      example: business
+    compare_classes:
+      name: Compare cabin classes
+      description: Also fetch best prices for every cabin class and expose them on the Cabin class comparison sensor (uses additional provider searches).
+      default: false
     target_price:
       name: Target price
       description: If set, alert when the best price drops to or below this value.
@@ -112,6 +121,12 @@ update_trip:
     currency:
       name: Currency
       description: ISO currency code for the prices.
+    seat_class:
+      name: Seat class
+      description: "Cabin class to price: economy, premium_economy, business or first."
+    compare_classes:
+      name: Compare cabin classes
+      description: Also fetch best prices for every cabin class and expose them on the Cabin class comparison sensor (uses additional provider searches).
     target_price:
       name: Target price
       description: If set, alert when the best price drops to or below this value.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -16,10 +17,13 @@ from .const import (
     CONF_TRIPS,
     DEFAULT_SCAN_INTERVAL_HOURS,
     DOMAIN,
+    SEAT_CLASSES,
 )
 from .models import (
+    FlightOffer,
     TripConfig,
     best_offer,
+    class_comparison_info,
     evaluate_update,
     trip_static_info,
     update_daily_history,
@@ -126,6 +130,11 @@ class FlightPriceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             info["provider_quota_used"] = quota
         insights = self.provider.price_insights(trip)
         info["price_insights"] = _insights_to_dict(insights) if insights else None
+        if trip.compare_classes:
+            comparison = await self._async_class_comparison(trip, offer)
+            info["class_comparison"] = comparison
+        else:
+            info.pop("class_comparison", None)
         history = info.get("price_history") or []
         if offer is not None:
             today = datetime.now(timezone.utc).astimezone().date()
@@ -139,6 +148,33 @@ class FlightPriceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             self._fire_target_reached(trip, result["offer"])
         if result["fire_historically_cheap"]:
             self._fire_historically_cheap(trip, result["info"])
+
+    async def _async_class_comparison(
+        self, trip: TripConfig, primary_offer: FlightOffer | None
+    ) -> dict[str, Any]:
+        """Best price per cabin class for the trip's route/dates.
+
+        The trip's own class is already present in ``primary_offer``, so it is
+        reused; the remaining classes each cost one additional search (two for
+        round trips, which need the return-leg token call).
+        """
+        entries: dict[str, FlightOffer | None] = {trip.seat_class: primary_offer}
+        for klass in SEAT_CLASSES:
+            if klass == trip.seat_class:
+                continue
+            variant = replace(trip, seat_class=klass)
+            try:
+                offers = await self.provider.search(variant)
+            except ProviderError as err:
+                _LOGGER.warning(
+                    "Class comparison failed for '%s' (%s): %s",
+                    trip.name,
+                    klass,
+                    err,
+                )
+                offers = []
+            entries[klass] = best_offer(offers)
+        return class_comparison_info(entries)
 
     def _event_data(self, trip: TripConfig, offer) -> dict[str, Any]:
         return {

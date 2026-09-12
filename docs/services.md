@@ -11,9 +11,9 @@ Immediately re-poll every trip in the entry, outside the normal scan interval.
 ### `flight_price_tracker.add_trip`
 Add a trip from an automation. Required: `origin`, `destination`, `date_from`.
 Optional: `name`, `trip_type` (`one_way`/`round_trip`), `return_from`,
-`passengers`, `max_stops`, `currency`, `seat_class`, `target_price`,
-`notify_on_target`, `cheap_percentile`, `notify_on_cheap`. Sensors appear on
-the next refresh.
+`passengers`, `max_stops`, `currency`, `seat_class`, `compare_classes`,
+`target_price`, `notify_on_target`, `cheap_percentile`, `notify_on_cheap`.
+Sensors appear on the next refresh.
 
 ### `flight_price_tracker.update_trip`
 Change any field of an existing trip. `trip_id` is required

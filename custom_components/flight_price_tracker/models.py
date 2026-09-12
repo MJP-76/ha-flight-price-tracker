@@ -43,6 +43,7 @@ class TripConfig:
     max_stops: int = DEFAULT_MAX_STOPS
     currency: str = DEFAULT_CURRENCY
     seat_class: str = DEFAULT_SEAT_CLASS
+    compare_classes: bool = False
     target_price: float | None = None
     notify_on_target: bool = True
     cheap_percentile: float = DEFAULT_CHEAP_PERCENTILE
@@ -66,6 +67,7 @@ class TripConfig:
             "max_stops": self.max_stops,
             "currency": self.currency,
             "seat_class": self.seat_class,
+            "compare_classes": self.compare_classes,
             "target_price": self.target_price,
             "notify_on_target": self.notify_on_target,
             "cheap_percentile": self.cheap_percentile,
@@ -95,6 +97,7 @@ class TripConfig:
             max_stops=int(data.get("max_stops", DEFAULT_MAX_STOPS)),
             currency=str(data.get("currency", DEFAULT_CURRENCY)),
             seat_class=str(data.get("seat_class", DEFAULT_SEAT_CLASS)),
+            compare_classes=bool(data.get("compare_classes", False)),
             target_price=(
                 float(data["target_price"])
                 if data.get("target_price") is not None
@@ -373,6 +376,7 @@ def trip_dict_from_form(
         "seat_class": str(
             form.get("seat_class", DEFAULT_SEAT_CLASS)
         ),
+        "compare_classes": bool(form.get("compare_classes", False)),
         "target_price": (
             float(form["target_price"])
             if form.get("target_price") not in (None, "")
@@ -626,4 +630,29 @@ def offer_display_attributes(offer_dict: dict[str, Any] | None) -> dict[str, Any
         "booking_token": offer_dict.get("booking_token"),
         "provider": offer_dict.get("provider"),
         "fetched_at": offer_dict.get("fetched_at"),
+    }
+
+
+def class_comparison_info(
+    entries: dict[str, FlightOffer | None],
+) -> dict[str, Any]:
+    """Turn best-offer-per-cabin-class into sensor material.
+
+    ``entries`` maps seat class → best offer (None when that class had no
+    results). Kept pure so it can be unit tested without a provider.
+    """
+    prices: dict[str, float] = {}
+    classes: dict[str, dict[str, Any]] = {}
+    for klass in SEAT_CLASSES:
+        offer = entries.get(klass)
+        if offer is None:
+            continue
+        prices[klass] = offer.price
+        classes[klass] = offer_display_attributes(offer.to_dict())
+    cheapest = min(prices, key=prices.get) if prices else None
+    return {
+        "prices": prices,
+        "classes": classes,
+        "cheapest_class": cheapest,
+        "cheapest_price": prices.get(cheapest) if cheapest else None,
     }

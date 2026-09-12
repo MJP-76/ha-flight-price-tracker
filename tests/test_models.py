@@ -11,6 +11,7 @@ from custom_components.flight_price_tracker.models import (
     LocationResult,
     TripConfig,
     best_offer,
+    class_comparison_info,
     evaluate_cheap,
     make_trip_id,
     percentile_rank,
@@ -28,6 +29,7 @@ def _trip(
     *,
     return_from: date | None = None,
     return_to: date | None = None,
+    compare_classes: bool = False,
 ) -> TripConfig:
     return TripConfig(
         id="lon_to_jfk",
@@ -39,6 +41,7 @@ def _trip(
         return_from=return_from,
         return_to=return_to,
         target_price=target_price,
+        compare_classes=compare_classes,
     )
 
 
@@ -50,6 +53,34 @@ def _offer(price: float, *, legs: int = 1) -> FlightOffer:
     return FlightOffer(
         price=price, currency="GBP", outbound=outbound, return_legs=return_legs
     )
+
+
+class TestClassComparisonInfo:
+    def test_picks_cheapest_class(self) -> None:
+        result = class_comparison_info(
+            {
+                "economy": _offer(320),
+                "premium_economy": _offer(520),
+                "business": _offer(1200),
+                "first": _offer(2000),
+            }
+        )
+        assert result["cheapest_class"] == "economy"
+        assert result["cheapest_price"] == 320
+        assert result["prices"]["business"] == 1200
+        assert result["classes"]["economy"]["airlines"] == "BA"
+
+    def test_missing_classes_are_skipped(self) -> None:
+        result = class_comparison_info({"economy": _offer(320)})
+        assert result["cheapest_class"] == "economy"
+        assert "business" not in result["prices"]
+        assert result["prices"] == {"economy": 320}
+
+    def test_empty_entries(self) -> None:
+        result = class_comparison_info({})
+        assert result["cheapest_class"] is None
+        assert result["cheapest_price"] is None
+        assert result["prices"] == {}
 
 
 class TestSlugify:
@@ -222,6 +253,26 @@ class TestTripDictFromForm:
         assert trip["return_from"] == "2026-09-08"
         assert trip["return_to"] == "2026-09-08"
 
+    def test_preserves_compare_classes(self) -> None:
+        form = {
+            "origin": "LON",
+            "destination": "JFK",
+            "date_from": "2026-09-01",
+            "date_to": "2026-09-05",
+            "compare_classes": True,
+        }
+        trip = trip_dict_from_form(form, trip_id="lon_to_jfk", name="NY")
+        assert trip["compare_classes"] is True
+
+    def test_compare_classes_default_off(self) -> None:
+        form = {
+            "origin": "LON",
+            "destination": "JFK",
+            "date_from": "2026-09-01",
+        }
+        trip = trip_dict_from_form(form, trip_id="lon_to_jfk", name="NY")
+        assert trip["compare_classes"] is False
+
 
 class TestTripConfig:
     def test_roundtrip_to_and_from_dict(self) -> None:
@@ -246,6 +297,11 @@ class TestTripConfig:
             ).is_round_trip
             is True
         )
+
+    def test_compare_classes_serialized(self) -> None:
+        restored = TripConfig.from_dict(_trip(compare_classes=True).to_dict())
+        assert restored.compare_classes is True
+        assert restored == _trip(compare_classes=True)
 
     def test_defaults(self) -> None:
         trip = _trip()

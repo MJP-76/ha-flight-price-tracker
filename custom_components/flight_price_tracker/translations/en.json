@@ -202,6 +202,9 @@
       },
       "typical_price": {
         "name": "Typical price"
+      },
+      "class_comparison": {
+        "name": "Cabin class comparison"
       }
     },
     "binary_sensor": {

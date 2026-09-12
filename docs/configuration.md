@@ -24,6 +24,7 @@ trip**, **Edit trip**, **Remove trip** or change the **Scan interval**.
 | `passengers` | Number of travellers (1–9). |
 | `max_stops` | Maximum stops allowed (0–3). `0` = nonstop only. |
 | `seat_class` | `economy`, `premium_economy`, `business` or `first`. |
+| `compare_classes` | Optional. When on, each poll also fetches the best price in every other cabin class and exposes the cheapest class + per-class prices on a dedicated sensor (see [Cabin class comparison](#cabin-class-comparison)). |
 | `currency` | ISO currency for prices (GBP, EUR, USD…). |
 | `target_price` | If set, trigger a target-reached alert when best price drops to or below this value. |
 | `notify_on_target` | Fire the event *and* create a persistent notification on target. |
@@ -57,6 +58,7 @@ at any time.
 | Passengers | 1 | 1–9 |
 | Max stops | 2 | 0–3 |
 | Seat class | economy | economy / premium_economy / business / first |
+| Compare cabin classes | off | on/off |
 | Currency | GBP | see [const.py][MAX_TRIPS] |
 | Target price | unset | any positive number |
 | Cheap percentile | 0.25 | 0.05–0.5 |
@@ -103,6 +105,25 @@ These are opportunistic: SerpAPI does not return `price_insights` for every
 search. When present they are shown on the `typical_price` sensor (see
 [Sensors & entities](sensors.md)) and in the dashboard. When absent, that
 sensor's state is `unknown` and the integration quietly skips the feature.
+
+## Cabin class comparison
+
+Turning on **Compare cabin classes** for a trip makes every poll also search
+economy, premium economy, business and first on the same route and dates, so
+you can see what an upgrade costs or whether a cheaper class exists than the
+one you normally book.
+
+**Search budget.** The trip's own class reuses the primary search's result, so
+it costs nothing extra. Each additional class costs one search (two for round
+trips, because the return legs need a second token call). A one-way trip
+therefore uses up to 3 extra searches per poll; a round trip up to 6. Check
+this against your provider's monthly quota — see [Providers](providers.md).
+
+**Result.** The best price found across all classes is exposed by
+`sensor.<trip>_class_comparison`, with `cheapest_class` and a per-class
+`prices`/`classes` breakdown in its attributes. Classes whose search failed
+(for example a provider error) are skipped rather than reported as £0. Turning
+the option off removes the sensor.
 
 ## Persistence
 

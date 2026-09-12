@@ -22,6 +22,9 @@ integration itself does not depend on any single airline API.
 - **Google price insights** — when the provider returns them, the integration
   captures Google's *typical price range*, *price level* and *lowest price* for
   the route/window and exposes them on the `typical_price` sensor.
+- **Cabin class comparison** — optionally poll every cabin class
+  (economy/premium economy/business/first) for the same route and dates and see
+  the cheapest class and per-class prices on a dedicated sensor.
 - **Alerting** — fires `flight_price_tracker_new_low`,
   `flight_price_tracker_target_reached` and
   `flight_price_tracker_historically_cheap` events and can raise a persistent

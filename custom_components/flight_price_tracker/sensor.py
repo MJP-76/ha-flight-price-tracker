@@ -49,6 +49,10 @@ async def async_setup_entry(
                 DepartureDateSensor(coordinator, trip.id, device),
             ]
         )
+        if trip.compare_classes:
+            entities.append(
+                ClassComparisonSensor(coordinator, trip.id, trip.currency, device)
+            )
         if trip.is_round_trip:
             entities.append(ReturnDateSensor(coordinator, trip.id, device))
     async_add_entities(entities)
@@ -260,6 +264,35 @@ class TypicalPriceSensor(FlightPriceSensor):
             "google_lowest_price": insights.get("lowest_price"),
             "google_history_count": insights.get("history_count"),
             "best_price": self._info.get("best_price"),
+            "trip_id": self.trip_id,
+            "last_updated": self._info.get("last_updated"),
+        }
+
+
+class ClassComparisonSensor(FlightPriceSensor):
+    """Cheapest cabin class for the trip, with per-class best prices."""
+
+    _attr_translation_key = "class_comparison"
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_state_class = None
+    _attr_icon = "mdi:scale-balance"
+
+    def __init__(self, coordinator, trip_id, currency, device) -> None:
+        super().__init__(coordinator, trip_id, currency, device)
+        self._attr_unique_id = f"{DOMAIN}_{trip_id}_class_comparison"
+
+    @property
+    def native_value(self) -> float | None:
+        return (self._info.get("class_comparison") or {}).get("cheapest_price")
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        cc = self._info.get("class_comparison") or {}
+        return {
+            "currency": self._attr_currency,
+            "cheapest_class": cc.get("cheapest_class"),
+            "prices": cc.get("prices"),
+            "classes": cc.get("classes"),
             "trip_id": self.trip_id,
             "last_updated": self._info.get("last_updated"),
         }

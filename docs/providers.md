@@ -71,7 +71,10 @@ parameter, plus `hl`/`gl` for interface language and region.
 
 **Cost model:** the free tier is ~100–250 searches/month. One daily poll = 1
 search per one-way trip, and 2 searches per round trip (outbound + token
-call). A round trip polled daily costs ~60 searches/month.
+call). A round trip polled daily costs ~60 searches/month. Enabling
+**Compare cabin classes** on a trip adds up to 3 searches per poll (one-way) or
+6 (round trip) — see [Configuration](configuration.md#cabin-class-comparison)
+before enabling it on many trips.
 
 ### Tequila (`tequila`)
 

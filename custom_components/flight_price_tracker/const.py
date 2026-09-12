@@ -52,6 +52,7 @@ TRIP_TYPE_ONE_WAY = "one_way"
 TRIP_TYPE_ROUND_TRIP = "round_trip"
 
 CONF_SEAT_CLASS = "seat_class"
+CONF_COMPARE_CLASSES = "compare_classes"
 SEAT_CLASS_ECONOMY = "economy"
 SEAT_CLASS_PREMIUM_ECONOMY = "premium_economy"
 SEAT_CLASS_BUSINESS = "business"

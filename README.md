@@ -18,6 +18,10 @@ integration itself does not depend on any single airline API.
 - **Google price insights** — when the provider returns them, Google's typical
   price range, price level and lowest price for the route/window are exposed on
   a dedicated `typical_price` sensor.
+- **Cabin class comparison** — optionally fetch the best price in every cabin
+  class (economy, premium economy, business, first) for the same route and
+  dates, and expose the cheapest class plus per-class prices on a dedicated
+  sensor. Note this uses extra provider searches (see below).
 - **Alerting** — fires `flight_price_tracker_new_low`,
   `flight_price_tracker_target_reached` and
   `flight_price_tracker_historically_cheap` events and can raise a persistent
@@ -77,6 +81,7 @@ only to keep multiple trips unambiguous:
 | `sensor.<trip>_avg_price` | Rolling average of the recorded daily prices. |
 | `sensor.<trip>_price_percentile` | Percentile (0–100) of the current price within recorded history. |
 | `sensor.<trip>_typical_price` | Midpoint of Google's typical price range (when insights are available). |
+| `sensor.<trip>_class_comparison` | Cheapest price across cabin classes (when enabled per trip). |
 | `sensor.<trip>_departure_date` | The trip's departure date. |
 | `sensor.<trip>_return_date` | The trip's return date (round trips only). |
 | `binary_sensor.<trip>_historically_cheap` | On when the current price is in the cheapest percentile of recorded history. |
@@ -122,6 +127,25 @@ When the price first crosses into the cheap zone, the integration fires the
 persistent notification, then waits for the price to leave the cheap zone
 before alerting again. Set the percentile (`cheap_percentile`, 0.05–0.5) and
 `notify_on_cheap` per trip in the options flow.
+
+### Cabin class comparison
+
+Turn on **Compare cabin classes** for a trip to also poll economy, premium
+economy, business and first on the same route and dates. The trip's own class
+reuses the primary search's result; every other class costs one extra search
+(two for round trips). That is up to 3 extra searches per poll for a one-way
+trip, 6 for a round trip — budget this against your provider's monthly quota.
+
+The result lives on `sensor.<trip>_class_comparison`:
+
+- state — the cheapest price found across all classes (GBP);
+- `cheapest_class` — the class that won;
+- `prices` — best price per class (`e.g. {"economy": 1347, "business": 8150}`);
+- `classes` — per-class details (airlines, flight numbers, stops, deep link);
+- `currency`, `trip_id`, `last_updated`.
+
+Classes whose search failed are skipped rather than reported as £0. Turning
+comparison off removes the sensor.
 
 ## Services
 

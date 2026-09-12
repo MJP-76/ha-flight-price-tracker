@@ -20,6 +20,7 @@ from .const import (
     CONF_API_KEY,
     CONF_BASE_URL,
     CONF_CHEAP_PERCENTILE,
+    CONF_COMPARE_CLASSES,
     CONF_CURRENCY,
     CONF_DATE_FROM,
     CONF_DESTINATION,
@@ -158,6 +159,10 @@ def _trip_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
         ): selector.SelectSelector(
             selector.SelectSelectorConfig(options=SEAT_CLASS_OPTIONS)
         ),
+        vol.Optional(
+            CONF_COMPARE_CLASSES,
+            default=bool(defaults.get(CONF_COMPARE_CLASSES, False)),
+        ): selector.BooleanSelector(),
         vol.Required(
             CONF_NOTIFY_ON_TARGET,
             default=defaults.get(CONF_NOTIFY_ON_TARGET, True),
@@ -781,6 +786,7 @@ def _trip_defaults(trip: dict[str, Any]) -> dict[str, Any]:
         CONF_MAX_STOPS: str(trip.get("max_stops", DEFAULT_MAX_STOPS)),
         CONF_CURRENCY: trip.get("currency", DEFAULT_CURRENCY),
         CONF_SEAT_CLASS: trip.get("seat_class", DEFAULT_SEAT_CLASS),
+        CONF_COMPARE_CLASSES: trip.get("compare_classes", False),
         CONF_TARGET_PRICE: trip.get("target_price"),
         CONF_NOTIFY_ON_TARGET: trip.get("notify_on_target", True),
     }

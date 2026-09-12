@@ -12,7 +12,8 @@
 #
 # Each trip provides: name, origin, destination, date_from, date_to,
 # return_from, return_to, best_price, lowest_price, offers_count, avg_price,
-# price_percentile, typical_price, historically_cheap, target_met.
+# price_percentile, typical_price, historically_cheap, target_met,
+# compare_classes, class_comparison.
 
 views:
   - title: Flights
@@ -63,6 +64,13 @@ views:
             entity: "{{ trip.historically_cheap }}"
             name: Historically cheap
             icon: mdi:trending-down
+{% if trip.compare_classes %}
+          - type: tile
+            entity: "{{ trip.class_comparison }}"
+            name: Cheapest cabin
+            icon: mdi:scale-balance
+            color: green
+{% endif %}
 {% if trip.target_met %}
           - type: tile
             entity: "{{ trip.target_met }}"
