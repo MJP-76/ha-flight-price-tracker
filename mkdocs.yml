@@ -48,6 +48,9 @@ nav:
   - Home: index.md
   - Installation: installation.md
   - Configuration: configuration.md
+  - Sensors & entities: sensors.md
   - Providers: providers.md
   - Services & events: services.md
   - Dashboard: dashboard.md
+  - Troubleshooting: troubleshooting.md
+  - Development: development.md

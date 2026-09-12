@@ -10,11 +10,18 @@ integration itself does not depend on any single airline API.
 
 ## What this integration does
 
-- **Trip-based** — each trip is a route with a date window (and optional
-  return leg), passenger count and stop tolerance.
+- **Trip-based** — each trip is a route with departure and return dates,
+  passenger count, seat class and stop tolerance.
 - **Provider-agnostic** — add a new price source by dropping in a small Python
-  class. Ships with Kiwi.com Tequila and a Mock provider.
+  class. Ships with **Google Flights (SerpAPI)**, Kiwi.com **Tequila** and a
+  **Mock** provider.
 - **Daily polling** — prices are fetched on a configurable interval (1–168 h).
+- **Round-trip aware** — return legs are fetched and merged onto each offer, so
+  `best_price`, event and dashboard data reflect the full journey (see
+  `return_legs`, `return_stops`, `flight_numbers`).
+- **Google price insights** — when the provider returns them, the integration
+  captures Google's *typical price range*, *price level* and *lowest price* for
+  the route/window and exposes them on the `typical_price` sensor.
 - **Alerting** — fires `flight_price_tracker_new_low`,
   `flight_price_tracker_target_reached` and
   `flight_price_tracker_historically_cheap` events and can raise a persistent
@@ -33,9 +40,12 @@ integration itself does not depend on any single airline API.
 |---|---|
 | Install and get an API key | [Installation](installation.md) |
 | Set up trips and options | [Configuration](configuration.md) |
+| What each sensor and attribute means | [Sensors & entities](sensors.md) |
 | Add your own price source | [Providers](providers.md) |
 | Services and events you can automate on | [Services & events](services.md) |
 | Ready-made Lovelace dashboard | [Dashboard](dashboard.md) |
+| Things not working as expected | [Troubleshooting](troubleshooting.md) |
+| Repo layout and running the tests | [Development](development.md) |
 
 [badge-home-assistant]: https://img.shields.io/badge/Home%20Assistant-41BDF5?style=flat-square&logo=homeassistant&logoColor=white
 [home-assistant]: https://www.home-assistant.io/
