@@ -24,7 +24,7 @@ trip**, **Edit trip**, **Remove trip** or change the **Scan interval**.
 | `passengers` | Number of travellers (1–9). |
 | `max_stops` | Maximum stops allowed (0–3). `0` = nonstop only. |
 | `seat_class` | `economy`, `premium_economy`, `business` or `first`. |
-| `compare_classes` | Optional. When on, each poll also fetches the best price in every other cabin class and exposes the cheapest class + per-class prices on a dedicated sensor (see [Cabin class comparison](#cabin-class-comparison)). |
+| `compare_classes` | Optional. When on, a dedicated `sensor.<trip>_class_comparison` is created. The comparison is **not** run on every poll — use the `flight_price_tracker.refresh_class_comparison` service or the dashboard button to run it when you want (see [Cabin class comparison](#cabin-class-comparison)). |
 | `currency` | ISO currency for prices (GBP, EUR, USD…). |
 | `target_price` | If set, trigger a target-reached alert when best price drops to or below this value. |
 | `notify_on_target` | Fire the event *and* create a persistent notification on target. |
@@ -108,15 +108,24 @@ sensor's state is `unknown` and the integration quietly skips the feature.
 
 ## Cabin class comparison
 
-Turning on **Compare cabin classes** for a trip makes every poll also search
-economy, premium economy, business and first on the same route and dates, so
-you can see what an upgrade costs or whether a cheaper class exists than the
-one you normally book.
+Turning on **Compare cabin classes** for a trip makes the integration able to
+search economy, premium economy, business and first on the same route and
+dates, so you can see what an upgrade costs or whether a cheaper class exists
+than the one you normally book.
+
+The comparison is **manual**: it does not run during normal polling. Instead,
+run it when you want (typically before booking):
+
+- **`flight_price_tracker.refresh_class_comparison`** service — refreshes the
+  comparison for one trip (`trip_id`) or every enabled trip;
+- **"Check cabin classes"** button on the generated dashboard;
+- the integration exposes the last result on
+  `sensor.<trip>_class_comparison` until the next time you run the service.
 
 **Search budget.** The trip's own class reuses the primary search's result, so
 it costs nothing extra. Each additional class costs one search (two for round
 trips, because the return legs need a second token call). A one-way trip
-therefore uses up to 3 extra searches per poll; a round trip up to 6. Check
+therefore uses up to 3 extra searches per run; a round trip up to 6. Check
 this against your provider's monthly quota — see [Providers](providers.md).
 
 **Result.** The best price found across all classes is exposed by

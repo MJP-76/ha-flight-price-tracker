@@ -1,6 +1,7 @@
 """Tests for the FlightPriceCoordinator class-comparison logic."""
 
 from datetime import date
+from types import SimpleNamespace
 
 from custom_components.flight_price_tracker.coordinator import FlightPriceCoordinator
 from custom_components.flight_price_tracker.models import FlightLeg, FlightOffer, TripConfig
@@ -28,6 +29,8 @@ class FakeProvider:
         self.searches.append(trip.seat_class)
         if trip.seat_class in self.bad:
             raise ProviderError("provider down")
+        if trip.seat_class not in self.prices:
+            return []
         return [_offer(self.prices[trip.seat_class])]
 
 
@@ -37,7 +40,7 @@ def _coordinator(provider: FakeProvider) -> FlightPriceCoordinator:
     return coordinator
 
 
-def _trip(*, seat_class: str = "economy") -> TripConfig:
+def _trip(*, seat_class: str = "economy", compare_classes: bool = False) -> TripConfig:
     return TripConfig(
         id="lon_to_jfk",
         name="NY",
@@ -46,6 +49,14 @@ def _trip(*, seat_class: str = "economy") -> TripConfig:
         date_from=date(2026, 9, 1),
         date_to=date(2026, 9, 1),
         seat_class=seat_class,
+        compare_classes=compare_classes,
+    )
+
+
+def _entry(*trips: TripConfig) -> SimpleNamespace:
+    return SimpleNamespace(
+        entry_id="entry_1",
+        options={"trips": [trip.to_dict() for trip in trips]},
     )
 
 
@@ -102,3 +113,64 @@ class TestAsyncClassComparison:
         assert result["prices"]["business"] == 1200
         assert result["prices"]["economy"] == 300
         assert result["cheapest_class"] == "economy"
+
+
+class TestManualRefreshClassComparison:
+    def test_refreshes_enabled_trips_and_stores_result(self) -> None:
+        provider = FakeProvider(
+            {"economy": 300, "premium_economy": 500, "business": 1200, "first": 2000}
+        )
+        coordinator = _coordinator(provider)
+        trip = _trip(compare_classes=True)
+        coordinator.entry = _entry(trip)
+        coordinator.data = {}
+
+        async def _save() -> None:
+            pass
+
+        coordinator._async_save = _save
+
+        ids = _run_async(coordinator.async_refresh_class_comparison())
+        assert ids == ["lon_to_jfk"]
+        comparison = coordinator.data["lon_to_jfk"]["class_comparison"]
+        assert comparison["prices"] == {"economy": 300, "premium_economy": 500, "business": 1200, "first": 2000}
+        assert comparison["cheapest_class"] == "economy"
+        assert "last_updated" in coordinator.data["lon_to_jfk"]
+        # A fresh primary search (own class) plus the other three classes
+        assert provider.searches.count("economy") == 1
+
+    def test_skips_disabled_trips(self) -> None:
+        provider = FakeProvider({"economy": 300})
+        coordinator = _coordinator(provider)
+        disabled = _trip(compare_classes=False)
+        enabled = _trip(compare_classes=True)
+        coordinator.entry = _entry(disabled, enabled)
+        coordinator.data = {}
+
+        async def _save() -> None:
+            pass
+
+        coordinator._async_save = _save
+
+        ids = _run_async(coordinator.async_refresh_class_comparison())
+        assert ids == ["lon_to_jfk"]
+        assert "lon_to_jfk" in coordinator.data
+        assert provider.searches != [] and "economy" in provider.searches
+
+    def test_trip_id_filter(self) -> None:
+        provider = FakeProvider({"economy": 300})
+        coordinator = _coordinator(provider)
+        enabled = _trip(compare_classes=True)
+        coordinator.entry = _entry(enabled)
+        coordinator.data = {}
+
+        async def _save() -> None:
+            pass
+
+        coordinator._async_save = _save
+
+        ids = _run_async(
+            coordinator.async_refresh_class_comparison(trip_id="lon_to_ber")
+        )
+        assert ids == []
+        assert coordinator.data == {}

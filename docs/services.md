@@ -8,6 +8,13 @@ All services accept an `entry_id` that selects which config entry to act on
 ### `flight_price_tracker.refresh`
 Immediately re-poll every trip in the entry, outside the normal scan interval.
 
+### `flight_price_tracker.refresh_class_comparison`
+Run the manual cabin-class comparison now for trips that have **Compare cabin
+classes** enabled. Optional `trip_id` limits the run to one trip; without it
+every enabled trip is compared. Uses extra provider searches (see
+[Configuration](configuration.md#cabin-class-comparison)). Raises an error if
+no trip has comparison enabled.
+
 ### `flight_price_tracker.add_trip`
 Add a trip from an automation. Required: `origin`, `destination`, `date_from`.
 Optional: `name`, `trip_type` (`one_way`/`round_trip`), `return_from`,

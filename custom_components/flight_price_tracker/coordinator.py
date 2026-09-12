@@ -130,10 +130,7 @@ class FlightPriceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             info["provider_quota_used"] = quota
         insights = self.provider.price_insights(trip)
         info["price_insights"] = _insights_to_dict(insights) if insights else None
-        if trip.compare_classes:
-            comparison = await self._async_class_comparison(trip, offer)
-            info["class_comparison"] = comparison
-        else:
+        if not trip.compare_classes:
             info.pop("class_comparison", None)
         history = info.get("price_history") or []
         if offer is not None:
@@ -175,6 +172,44 @@ class FlightPriceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 offers = []
             entries[klass] = best_offer(offers)
         return class_comparison_info(entries)
+
+    async def async_refresh_class_comparison(
+        self, trip_id: str | None = None
+    ) -> list[str]:
+        """Run the cabin-class comparison on demand.
+
+        Comparison is a manual check rather than part of the regular poll: only
+        trips with ``compare_classes`` enabled (and ``trip_id`` when given) are
+        queried. Each refreshes the trip's own class with a fresh primary search
+        plus one search per extra cabin class (two for round trips).
+
+        Returns the ids of the trips whose comparison was refreshed.
+        """
+        refreshed: list[str] = []
+        for trip in self.trips:
+            if not trip.compare_classes:
+                continue
+            if trip_id is not None and trip.id != trip_id:
+                continue
+            try:
+                offers = await self.provider.search(trip)
+            except ProviderError as err:
+                _LOGGER.warning(
+                    "Class comparison refresh failed for trip '%s': %s",
+                    trip.name,
+                    err,
+                )
+                continue
+            info = self.data.setdefault(trip.id, {})
+            info["class_comparison"] = await self._async_class_comparison(
+                trip, best_offer(offers)
+            )
+            info["last_updated"] = datetime.now(timezone.utc).isoformat()
+            refreshed.append(trip.id)
+        if refreshed:
+            await self._async_save()
+            self.async_update_listeners()
+        return refreshed
 
     def _event_data(self, trip: TripConfig, offer) -> dict[str, Any]:
         return {

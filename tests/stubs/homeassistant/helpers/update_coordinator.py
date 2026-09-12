@@ -30,6 +30,9 @@ class DataUpdateCoordinator:
     async def async_request_refresh(self) -> None:
         pass
 
+    def async_update_listeners(self) -> None:
+        pass
+
 
 class CoordinatorEntity:
     def __init__(self, coordinator):

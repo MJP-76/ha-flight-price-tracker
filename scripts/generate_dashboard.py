@@ -15,6 +15,11 @@ The template uses a small subset of Jinja2 ({{ var }}, {% for %}, {% if %})
 implemented here with the standard library only, so no extra packages are
 needed on the machine that runs it. To install the dashboard, save the output
 as a raw-YAML dashboard in Settings -> Dashboards.
+
+Entity IDs are resolved through Home Assistant's entity registry: the script
+looks up each entity's known unique id (flight_price_tracker_<trip>_<sensor>)
+and emits the real entity_id (e.g. sensor.best_price for the first trip). The
+registry file is read from the same .storage/ directory as the config entries.
 """
 
 from __future__ import annotations
@@ -108,7 +113,39 @@ def _render(tokens: list[str], scope: dict) -> str:
     return "".join(out)
 
 
-def _trips_from_entries(entries: list[dict]) -> list[dict]:
+def _entity_map(entries_path: str | None) -> dict[str, str]:
+    """Map unique_id -> entity_id from the entity registry next to config entries."""
+    if not entries_path:
+        return {}
+    registry_path = os.path.join(
+        os.path.dirname(os.path.abspath(entries_path)), "core.entity_registry"
+    )
+    if not os.path.exists(registry_path):
+        return {}
+    with open(registry_path, encoding="utf-8") as handle:
+        data = json.load(handle)
+    records = data.get("data", []) if isinstance(data, dict) else data
+    if isinstance(records, dict):
+        if "entities" in records:
+            records = records["entities"]
+        elif "data" in records:
+            records = records["data"]
+    result: dict[str, str] = {}
+    for record in records:
+        if (
+            isinstance(record, dict)
+            and record.get("unique_id")
+            and record.get("entity_id")
+        ):
+            result[record["unique_id"]] = record["entity_id"]
+    return result
+
+
+def _trips_from_entries(entries: list[dict], entity_map: dict[str, str]) -> list[dict]:
+    def entity(trip_id: str, sensor: str, *, prefix: str = "sensor") -> str:
+        unique_id = f"{DOMAIN}_{trip_id}_{sensor}"
+        return entity_map.get(unique_id) or f"{prefix}.{trip_id}_{sensor}"
+
     trips: list[dict] = []
     for entry in entries:
         if entry.get("domain") != DOMAIN:
@@ -125,17 +162,19 @@ def _trips_from_entries(entries: list[dict]) -> list[dict]:
                     "date_to": trip.get("date_to", ""),
                     "return_from": trip.get("return_from") or "",
                     "return_to": trip.get("return_to") or "",
-                    "best_price": f"sensor.{trip_id}_best_price",
-                    "lowest_price": f"sensor.{trip_id}_lowest_price",
-                    "offers_count": f"sensor.{trip_id}_offers_count",
-                    "avg_price": f"sensor.{trip_id}_avg_price",
-                    "price_percentile": f"sensor.{trip_id}_price_percentile",
-                    "typical_price": f"sensor.{trip_id}_typical_price",
-                    "historically_cheap": f"binary_sensor.{trip_id}_historically_cheap",
+                    "best_price": entity(trip_id, "best_price"),
+                    "lowest_price": entity(trip_id, "lowest_price"),
+                    "offers_count": entity(trip_id, "offers_count"),
+                    "avg_price": entity(trip_id, "avg_price"),
+                    "price_percentile": entity(trip_id, "price_percentile"),
+                    "typical_price": entity(trip_id, "typical_price"),
+                    "historically_cheap": entity(
+                        trip_id, "historically_cheap", prefix="binary_sensor"
+                    ),
                     "compare_classes": bool(trip.get("compare_classes", False)),
-                    "class_comparison": f"sensor.{trip_id}_class_comparison",
+                    "class_comparison": entity(trip_id, "class_comparison"),
                     "target_met": (
-                        f"binary_sensor.{trip_id}_target_met"
+                        entity(trip_id, "target_met", prefix="binary_sensor")
                         if trip.get("target_price")
                         else None
                     ),
@@ -181,7 +220,8 @@ def main(argv: list[str] | None = None) -> None:
         container = data
     entries = [e for e in container if isinstance(e, dict)]
 
-    trips = _trips_from_entries(entries)
+    entity_map = _entity_map(args.config_entries or path)
+    trips = _trips_from_entries(entries, entity_map)
     if not trips:
         print(
             f"No '{DOMAIN}' config entries found in {path}.",

@@ -48,10 +48,33 @@ SAMPLE_ENTRIES = {
 }
 
 
+SAMPLE_ENTITY_REGISTRY = {"data": {"entities": [
+    {"unique_id": "flight_price_tracker_lon_to_jfk_best_price", "entity_id": "sensor.best_price"},
+    {"unique_id": "flight_price_tracker_lon_to_jfk_lowest_price", "entity_id": "sensor.lowest_price"},
+    {"unique_id": "flight_price_tracker_lon_to_jfk_offers_count", "entity_id": "sensor.offers_count"},
+    {"unique_id": "flight_price_tracker_lon_to_jfk_avg_price", "entity_id": "sensor.average_price"},
+    {"unique_id": "flight_price_tracker_lon_to_jfk_price_percentile", "entity_id": "sensor.price_percentile"},
+    {"unique_id": "flight_price_tracker_lon_to_jfk_typical_price", "entity_id": "sensor.typical_price"},
+    {"unique_id": "flight_price_tracker_lon_to_jfk_historically_cheap", "entity_id": "binary_sensor.historically_cheap"},
+    {"unique_id": "flight_price_tracker_lon_to_jfk_target_met", "entity_id": "binary_sensor.target_met"},
+    {"unique_id": "flight_price_tracker_lon_to_jfk_class_comparison", "entity_id": "sensor.cabin_class_comparison"},
+    {"unique_id": "flight_price_tracker_lon_to_ber_best_price", "entity_id": "sensor.best_price_2"},
+    {"unique_id": "flight_price_tracker_lon_to_ber_lowest_price", "entity_id": "sensor.lowest_price_2"},
+    {"unique_id": "flight_price_tracker_lon_to_ber_offers_count", "entity_id": "sensor.offers_count_2"},
+    {"unique_id": "flight_price_tracker_lon_to_ber_avg_price", "entity_id": "sensor.avg_price_2"},
+    {"unique_id": "flight_price_tracker_lon_to_ber_price_percentile", "entity_id": "sensor.price_percentile_2"},
+    {"unique_id": "flight_price_tracker_lon_to_ber_typical_price", "entity_id": "sensor.typical_price_2"},
+    {"unique_id": "flight_price_tracker_lon_to_ber_historically_cheap", "entity_id": "binary_sensor.historically_cheap_2"},
+]}}
+
+
 def _render() -> str:
     tmp = os.path.join(os.path.dirname(__file__), ".sample_entries.json")
+    registry = os.path.join(os.path.dirname(__file__), "core.entity_registry")
     with open(tmp, "w", encoding="utf-8") as handle:
         json.dump(SAMPLE_ENTRIES, handle)
+    with open(registry, "w", encoding="utf-8") as handle:
+        json.dump(SAMPLE_ENTITY_REGISTRY, handle)
     try:
         result = subprocess.run(
             [sys.executable, SCRIPT, tmp],
@@ -61,31 +84,38 @@ def _render() -> str:
         )
     finally:
         os.remove(tmp)
+        os.remove(registry)
     return result.stdout
 
 
 class TestDashboardGenerator:
     def test_renders_both_trips(self) -> None:
         output = _render()
-        assert "sensor.lon_to_jfk_best_price" in output
-        assert "sensor.lon_to_jfk_lowest_price" in output
-        assert "sensor.lon_to_jfk_offers_count" in output
-        assert "sensor.lon_to_jfk_avg_price" in output
-        assert "sensor.lon_to_jfk_price_percentile" in output
-        assert "sensor.lon_to_jfk_typical_price" in output
-        assert "binary_sensor.lon_to_jfk_historically_cheap" in output
-        assert "sensor.lon_to_ber_best_price" in output
+        assert "sensor.best_price" in output
+        assert "sensor.lowest_price" in output
+        assert "sensor.offers_count" in output
+        assert "sensor.avg_price" in output
+        assert "sensor.price_percentile" in output
+        assert "sensor.typical_price" in output
+        assert "binary_sensor.historically_cheap" in output
+        assert "sensor.best_price_2" in output
         assert output.count("heading:") >= 3  # title + two trips
+
+    def test_uses_real_entity_ids_from_registry(self) -> None:
+        output = _render()
+        assert "sensor.lon_to_jfk_best_price" not in output
+        assert "entity: \"sensor.best_price\"" in output
 
     def test_target_met_conditional(self) -> None:
         output = _render()
-        assert "binary_sensor.lon_to_jfk_target_met" in output
-        assert "binary_sensor.lon_to_ber_target_met" not in output
+        assert "binary_sensor.target_met" in output
+        assert "target_met_2" not in output
 
     def test_class_comparison_conditional(self) -> None:
         output = _render()
-        assert "sensor.lon_to_jfk_class_comparison" in output
-        assert "sensor.lon_to_ber_class_comparison" not in output
+        assert "sensor.cabin_class_comparison" in output
+        assert "sensor.best_price_2" in output
+        assert "cabin_class_comparison_2" not in output
 
     def test_template_has_no_leftover_tags(self) -> None:
         output = _render()

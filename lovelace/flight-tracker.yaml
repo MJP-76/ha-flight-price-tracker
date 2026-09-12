@@ -30,6 +30,12 @@ views:
             tap_action:
               action: perform-action
               perform_action: flight_price_tracker.refresh
+          - type: button
+            name: Check cabin classes
+            icon: mdi:scale-balance
+            tap_action:
+              action: perform-action
+              perform_action: flight_price_tracker.refresh_class_comparison
 {% for trip in trips %}
       - type: grid
         cards:

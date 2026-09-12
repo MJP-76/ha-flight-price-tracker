@@ -6,6 +6,17 @@ refresh:
       name: Entry ID
       description: Config entry to refresh. Defaults to the first Flight Price Tracker entry.
 
+refresh_class_comparison:
+  name: Refresh cabin class comparison
+  description: Run the manual cabin-class comparison now for trips that have Compare cabin classes enabled. Uses extra provider searches.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Config entry whose trips should be compared. Defaults to the first entry.
+    trip_id:
+      name: Trip ID
+      description: Only refresh the comparison for this trip (e.g. lon_to_jfk). Defaults to all trips with comparison enabled.
+
 add_trip:
   name: Add trip
   description: Add a trip to watch. Creates its sensors on the next refresh.

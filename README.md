@@ -130,11 +130,16 @@ before alerting again. Set the percentile (`cheap_percentile`, 0.05–0.5) and
 
 ### Cabin class comparison
 
-Turn on **Compare cabin classes** for a trip to also poll economy, premium
-economy, business and first on the same route and dates. The trip's own class
-reuses the primary search's result; every other class costs one extra search
-(two for round trips). That is up to 3 extra searches per poll for a one-way
-trip, 6 for a round trip — budget this against your provider's monthly quota.
+Turn on **Compare cabin classes** for a trip to compare economy, premium
+economy, business and first on the same route and dates. The comparison is
+**manual** — it does not run on every poll. Run it when you want with the
+`flight_price_tracker.refresh_class_comparison` service (or the dashboard's
+**Check cabin classes** button).
+
+The trip's own class reuses the primary search's result; every other class
+costs one extra search (two for round trips). That is up to 3 extra searches
+per run for a one-way trip, 6 for a round trip — budget this against your
+provider's monthly quota.
 
 The result lives on `sensor.<trip>_class_comparison`:
 
@@ -150,6 +155,8 @@ comparison off removes the sensor.
 ## Services
 
 - `flight_price_tracker.refresh` — poll all trips immediately.
+- `flight_price_tracker.refresh_class_comparison` — run the manual cabin-class
+  comparison now for trips that have it enabled.
 - `flight_price_tracker.add_trip` / `update_trip` / `remove_trip` — manage
   trips from automations (all trip fields as attributes; `update_trip` /
   `remove_trip` take `trip_id`).

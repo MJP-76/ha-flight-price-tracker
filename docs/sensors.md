@@ -83,7 +83,9 @@ cheapest class's price.
 | `trip_id` / `last_updated` | Trip and timestamp of the comparison |
 
 Classes whose search failed are skipped rather than reported as £0. Turning
-the option off removes the sensor. See
+the option off removes the sensor. The comparison is **manual** — it is
+refreshed with the `flight_price_tracker.refresh_class_comparison` service (or
+the dashboard's **Check cabin classes** button), not on every poll. See
 [Configuration](configuration.md#cabin-class-comparison) for the search-budget
 trade-off.
 

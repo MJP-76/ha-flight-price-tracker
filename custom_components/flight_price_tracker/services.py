@@ -44,6 +44,7 @@ from .models import make_trip_id, trip_dict_from_form, validate_trip_form
 from .providers import ProviderError, get_provider
 
 SERVICE_REFRESH = "refresh"
+SERVICE_REFRESH_CLASS_COMPARISON = "refresh_class_comparison"
 SERVICE_ADD_TRIP = "add_trip"
 SERVICE_UPDATE_TRIP = "update_trip"
 SERVICE_REMOVE_TRIP = "remove_trip"
@@ -56,6 +57,12 @@ ATTR_TRIP_ID = "trip_id"
 ATTR_QUERY = "query"
 
 SERVICE_SCHEMA_REFRESH = vol.Schema({vol.Optional(ATTR_ENTRY_ID): str})
+SERVICE_SCHEMA_CLASS_COMPARISON = vol.Schema(
+    {
+        vol.Optional(ATTR_ENTRY_ID): str,
+        vol.Optional(ATTR_TRIP_ID): str,
+    }
+)
 SERVICE_SCHEMA_REMOVE_TRIP = vol.Schema(
     {vol.Optional(ATTR_ENTRY_ID): str, vol.Required(ATTR_TRIP_ID): str}
 )
@@ -153,6 +160,17 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
         await coordinator.async_request_refresh()
 
+    async def _async_refresh_class_comparison(call: ServiceCall) -> None:
+        entry = _get_target_entry(hass, call.data.get(ATTR_ENTRY_ID))
+        coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+        trip_id = call.data.get(ATTR_TRIP_ID)
+        refreshed = await coordinator.async_refresh_class_comparison(trip_id=trip_id)
+        if not refreshed:
+            suffix = f" '{trip_id}'" if trip_id else ""
+            raise HomeAssistantError(
+                f"No trip{suffix} has 'Compare cabin classes' enabled"
+            )
+
     async def _async_add_trip(call: ServiceCall) -> None:
         entry = _get_target_entry(hass, call.data.get(ATTR_ENTRY_ID))
         data = dict(call.data)
@@ -228,6 +246,12 @@ async def async_setup_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(
         DOMAIN,
+        SERVICE_REFRESH_CLASS_COMPARISON,
+        _async_refresh_class_comparison,
+        schema=SERVICE_SCHEMA_CLASS_COMPARISON,
+    )
+    hass.services.async_register(
+        DOMAIN,
         SERVICE_ADD_TRIP,
         _async_add_trip,
         schema=SERVICE_SCHEMA_ADD_TRIP,
@@ -267,6 +291,7 @@ async def async_unload_services(hass: HomeAssistant, current_entry=None) -> None
         return
     for service in (
         SERVICE_REFRESH,
+        SERVICE_REFRESH_CLASS_COMPARISON,
         SERVICE_ADD_TRIP,
         SERVICE_UPDATE_TRIP,
         SERVICE_REMOVE_TRIP,
