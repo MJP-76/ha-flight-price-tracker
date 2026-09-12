@@ -130,6 +130,7 @@ def _trips_from_entries(entries: list[dict]) -> list[dict]:
                     "offers_count": f"sensor.{trip_id}_offers_count",
                     "avg_price": f"sensor.{trip_id}_avg_price",
                     "price_percentile": f"sensor.{trip_id}_price_percentile",
+                    "typical_price": f"sensor.{trip_id}_typical_price",
                     "historically_cheap": f"binary_sensor.{trip_id}_historically_cheap",
                     "target_met": (
                         f"binary_sensor.{trip_id}_target_met"

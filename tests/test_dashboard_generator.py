@@ -71,6 +71,7 @@ class TestDashboardGenerator:
         assert "sensor.lon_to_jfk_offers_count" in output
         assert "sensor.lon_to_jfk_avg_price" in output
         assert "sensor.lon_to_jfk_price_percentile" in output
+        assert "sensor.lon_to_jfk_typical_price" in output
         assert "binary_sensor.lon_to_jfk_historically_cheap" in output
         assert "sensor.lon_to_ber_best_price" in output
         assert output.count("heading:") >= 3  # title + two trips

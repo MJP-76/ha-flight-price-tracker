@@ -12,7 +12,7 @@
 #
 # Each trip provides: name, origin, destination, date_from, date_to,
 # return_from, return_to, best_price, lowest_price, offers_count, avg_price,
-# price_percentile, historically_cheap, target_met.
+# price_percentile, typical_price, historically_cheap, target_met.
 
 views:
   - title: Flights
@@ -56,6 +56,10 @@ views:
             name: Percentile
             icon: mdi:percent
           - type: tile
+            entity: "{{ trip.typical_price }}"
+            name: Typical price
+            icon: mdi:chart-bell-curve-cumulative
+          - type: tile
             entity: "{{ trip.historically_cheap }}"
             name: Historically cheap
             icon: mdi:trending-down
@@ -72,4 +76,14 @@ views:
               **{{ trip.origin }} → {{ trip.destination }}** ·
               {{ trip.date_from }} → {{ trip.date_to }}
               {% if trip.return_from %}· return {{ trip.return_from }} → {{ trip.return_to }}{% endif %}
+          - type: history-graph
+            title: Price history
+            hours_to_show: 720
+            entities:
+              - entity: "{{ trip.lowest_price }}"
+                name: Lowest ever
+              - entity: "{{ trip.avg_price }}"
+                name: Average
+              - entity: "{{ trip.best_price }}"
+                name: Best now
 {% endfor %}
