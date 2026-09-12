@@ -11,6 +11,11 @@ PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR]
 CONF_PROVIDER = "provider"
 CONF_API_KEY = "api_key"
 CONF_BASE_URL = "base_url"
+CONF_HL = "hl"
+CONF_GL = "gl"
+
+DEFAULT_HL = "en"
+DEFAULT_GL = "uk"
 
 CONF_TRIPS = "trips"
 CONF_TRIP_NAME = "name"
@@ -45,6 +50,27 @@ MAX_HISTORY_DAYS = 365
 
 TRIP_TYPE_ONE_WAY = "one_way"
 TRIP_TYPE_ROUND_TRIP = "round_trip"
+
+CONF_SEAT_CLASS = "seat_class"
+SEAT_CLASS_ECONOMY = "economy"
+SEAT_CLASS_PREMIUM_ECONOMY = "premium_economy"
+SEAT_CLASS_BUSINESS = "business"
+SEAT_CLASS_FIRST = "first"
+DEFAULT_SEAT_CLASS = SEAT_CLASS_ECONOMY
+
+SEAT_CLASS_OPTIONS = [
+    {"value": SEAT_CLASS_ECONOMY, "label": "Economy"},
+    {"value": SEAT_CLASS_PREMIUM_ECONOMY, "label": "Premium economy"},
+    {"value": SEAT_CLASS_BUSINESS, "label": "Business"},
+    {"value": SEAT_CLASS_FIRST, "label": "First"},
+]
+
+SEAT_CLASSES = (
+    SEAT_CLASS_ECONOMY,
+    SEAT_CLASS_PREMIUM_ECONOMY,
+    SEAT_CLASS_BUSINESS,
+    SEAT_CLASS_FIRST,
+)
 
 # Currency list offered in the config flow (matches Tequila's supported currencies).
 CURRENCIES = [

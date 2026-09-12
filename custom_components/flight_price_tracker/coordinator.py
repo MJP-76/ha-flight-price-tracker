@@ -21,6 +21,7 @@ from .models import (
     TripConfig,
     best_offer,
     evaluate_update,
+    trip_static_info,
     update_daily_history,
 )
 from .providers import FlightSearchProvider, ProviderAuthError, ProviderError
@@ -33,6 +34,22 @@ STORAGE_VERSION = 1
 EVENT_TARGET_REACHED = f"{DOMAIN}_target_reached"
 EVENT_NEW_LOW = f"{DOMAIN}_new_low"
 EVENT_HISTORICALLY_CHEAP = f"{DOMAIN}_historically_cheap"
+
+
+def _insights_to_dict(insights) -> dict[str, Any]:
+    """Flatten a PriceInsights object for storage/sensors."""
+    typical = insights.typical_price_range or (None, None)
+    return {
+        "lowest_price": insights.lowest_price,
+        "price_level": insights.price_level,
+        "typical_low": typical[0],
+        "typical_high": typical[1],
+        "history_count": len(insights.history),
+        "history": [
+            {"date": day.isoformat(), "price": price}
+            for day, price in insights.history
+        ],
+    }
 
 
 class FlightPriceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
@@ -80,6 +97,9 @@ class FlightPriceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
     async def _async_update_trip(self, trip: TripConfig) -> None:
         info = self.data.setdefault(trip.id, {})
+        static = trip_static_info(trip)
+        for key, value in static.items():
+            info[key] = value
         info.setdefault("lowest_seen", None)
         try:
             offers = await self.provider.search(trip)
@@ -101,6 +121,11 @@ class FlightPriceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             return
 
         offer = best_offer(offers)
+        quota = getattr(self.provider, "used_quota", None)
+        if quota is not None:
+            info["provider_quota_used"] = quota
+        insights = self.provider.price_insights(trip)
+        info["price_insights"] = _insights_to_dict(insights) if insights else None
         history = info.get("price_history") or []
         if offer is not None:
             today = datetime.now(timezone.utc).astimezone().date()

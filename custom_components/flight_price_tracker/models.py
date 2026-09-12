@@ -20,6 +20,11 @@ MAX_CHEAP_PERCENTILE = 0.5
 MIN_CHEAP_SAMPLES = 7
 MAX_HISTORY_DAYS = 365
 MAX_PASSENGERS = 9
+DEFAULT_SEAT_CLASS = "economy"
+SEAT_CLASSES = ("economy", "premium_economy", "business", "first")
+
+TRIP_TYPE_ONE_WAY = "one_way"
+TRIP_TYPE_ROUND_TRIP = "round_trip"
 
 
 @dataclass
@@ -37,6 +42,7 @@ class TripConfig:
     passengers: int = DEFAULT_PASSENGERS
     max_stops: int = DEFAULT_MAX_STOPS
     currency: str = DEFAULT_CURRENCY
+    seat_class: str = DEFAULT_SEAT_CLASS
     target_price: float | None = None
     notify_on_target: bool = True
     cheap_percentile: float = DEFAULT_CHEAP_PERCENTILE
@@ -59,6 +65,7 @@ class TripConfig:
             "passengers": self.passengers,
             "max_stops": self.max_stops,
             "currency": self.currency,
+            "seat_class": self.seat_class,
             "target_price": self.target_price,
             "notify_on_target": self.notify_on_target,
             "cheap_percentile": self.cheap_percentile,
@@ -87,6 +94,7 @@ class TripConfig:
             passengers=int(data.get("passengers", DEFAULT_PASSENGERS)),
             max_stops=int(data.get("max_stops", DEFAULT_MAX_STOPS)),
             currency=str(data.get("currency", DEFAULT_CURRENCY)),
+            seat_class=str(data.get("seat_class", DEFAULT_SEAT_CLASS)),
             target_price=(
                 float(data["target_price"])
                 if data.get("target_price") is not None
@@ -201,6 +209,16 @@ class LocationResult:
     country: str | None = None
 
 
+@dataclass
+class PriceInsights:
+    """Historical pricing context from Google Flights (SerpAPI price_insights)."""
+
+    lowest_price: float | None = None
+    price_level: str | None = None  # "low" | "typical" | "high"
+    typical_price_range: tuple[float | None, float | None] | None = None
+    history: list[tuple[date, float]] = field(default_factory=list)
+
+
 def _leg_to_dict(leg: FlightLeg) -> dict[str, Any]:
     return {
         "airline": leg.airline,
@@ -269,14 +287,6 @@ def validate_trip_form(data: dict[str, Any]) -> dict[str, str]:
     except (KeyError, ValueError):
         errors["date_from"] = "invalid_date"
         date_from = None
-    try:
-        date_to = date.fromisoformat(str(data["date_to"]))
-    except (KeyError, ValueError):
-        errors["date_to"] = "invalid_date"
-        date_to = None
-
-    if date_from and date_to and date_to < date_from:
-        errors["date_to"] = "date_to_before_from"
 
     passengers = data.get("passengers")
     if passengers is not None:
@@ -292,6 +302,10 @@ def validate_trip_form(data: dict[str, Any]) -> dict[str, str]:
                 errors["max_stops"] = "max_stops_range"
         except (TypeError, ValueError):
             errors["max_stops"] = "invalid_max_stops"
+
+    seat_class = data.get("seat_class")
+    if seat_class is not None and seat_class not in SEAT_CLASSES:
+        errors["seat_class"] = "invalid_seat_class"
 
     target = data.get("target_price")
     if target not in (None, ""):
@@ -310,7 +324,6 @@ def validate_trip_form(data: dict[str, Any]) -> dict[str, str]:
             errors["cheap_percentile"] = "cheap_percentile_range"
 
     return_f = data.get("return_from")
-    return_t = data.get("return_to")
     if return_f:
         try:
             return_from = date.fromisoformat(str(return_f))
@@ -319,18 +332,14 @@ def validate_trip_form(data: dict[str, Any]) -> dict[str, str]:
             return_from = None
     else:
         return_from = None
-    if return_t:
-        try:
-            return_to = date.fromisoformat(str(return_t))
-        except ValueError:
-            errors["return_to"] = "invalid_date"
-            return_to = None
-    else:
-        return_to = None
 
-    if return_from and return_to and return_to < return_from:
-        errors["return_to"] = "return_to_before_from"
-    if return_from and date_to and return_from < date_to:
+    if (
+        str(data.get("trip_type", "")).strip() == TRIP_TYPE_ROUND_TRIP
+        and return_from is None
+    ):
+        errors["return_from"] = "return_required"
+
+    if return_from and date_from and return_from < date_from:
         errors["return_from"] = "return_before_departure"
 
     return errors
@@ -339,21 +348,31 @@ def validate_trip_form(data: dict[str, Any]) -> dict[str, str]:
 def trip_dict_from_form(
     form: dict[str, Any], *, trip_id: str, name: str
 ) -> dict[str, Any]:
-    """Build a serializable trip dict from raw form/service input."""
+    """Build a serializable trip dict from raw form/service input.
+
+    Outbound and return are single dates; ``date_to``/``return_to`` are kept
+    for backwards compatibility with stored trips and Tequila's window-style
+    API, set equal to their "from" date.
+    """
     origin = str(form.get("origin", "")).strip().upper()
     destination = str(form.get("destination", "")).strip().upper()
+    date_from = str(form["date_from"])
+    return_from = str(form.get("return_from") or "") or None
     return {
         "id": trip_id,
         "name": name,
         "origin": origin,
         "destination": destination,
-        "date_from": str(form["date_from"]),
-        "date_to": str(form["date_to"]),
-        "return_from": str(form.get("return_from") or "") or None,
-        "return_to": str(form.get("return_to") or "") or None,
+        "date_from": date_from,
+        "date_to": date_from,
+        "return_from": return_from,
+        "return_to": return_from,
         "passengers": int(form.get("passengers", DEFAULT_PASSENGERS)),
         "max_stops": int(form.get("max_stops", DEFAULT_MAX_STOPS)),
         "currency": str(form.get("currency", DEFAULT_CURRENCY)),
+        "seat_class": str(
+            form.get("seat_class", DEFAULT_SEAT_CLASS)
+        ),
         "target_price": (
             float(form["target_price"])
             if form.get("target_price") not in (None, "")
@@ -481,6 +500,26 @@ def evaluate_cheap(
     }
 
 
+def trip_static_info(trip: TripConfig) -> dict[str, Any]:
+    """Static trip facts exposed via sensor state attributes."""
+    return {
+        "trip_name": trip.name,
+        "origin": trip.origin,
+        "destination": trip.destination,
+        "date_from": trip.date_from.isoformat(),
+        "date_to": trip.date_to.isoformat(),
+        "return_from": trip.return_from.isoformat() if trip.return_from else None,
+        "return_to": trip.return_to.isoformat() if trip.return_to else None,
+        "max_stops": trip.max_stops,
+        "passengers": trip.passengers,
+        "seat_class": trip.seat_class,
+        "currency": trip.currency,
+        "target_price": trip.target_price,
+        "notify_on_target": trip.notify_on_target,
+        "notify_on_cheap": trip.notify_on_cheap,
+    }
+
+
 def evaluate_update(
     trip: TripConfig,
     info: dict[str, Any],
@@ -526,6 +565,7 @@ def evaluate_update(
     )
 
     new_info = {
+        **trip_static_info(trip),
         **info,
         "best_price": offer.price if offer else None,
         "currency": trip.currency,
@@ -549,14 +589,6 @@ def evaluate_update(
         "enough_data": cheap["enough_data"],
         "historically_cheap": cheap["historically_cheap"],
         "cheap_was_met": cheap["historically_cheap"],
-        "trip_name": trip.name,
-        "origin": trip.origin,
-        "destination": trip.destination,
-        "max_stops": trip.max_stops,
-        "passengers": trip.passengers,
-        "target_price": trip.target_price,
-        "notify_on_target": trip.notify_on_target,
-        "notify_on_cheap": trip.notify_on_cheap,
     }
 
     return {

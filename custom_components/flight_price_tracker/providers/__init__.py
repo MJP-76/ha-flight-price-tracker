@@ -12,7 +12,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, TypeVar
 
-from ..models import FlightOffer, LocationResult, TripConfig
+from ..models import FlightOffer, LocationResult, PriceInsights, TripConfig
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -62,6 +62,10 @@ class FlightSearchProvider(ABC):
     async def resolve_location(self, query: str) -> list[LocationResult]:
         """Resolve a free-text place to selectable codes. Optional."""
         raise ProviderError(f"Provider '{self.name}' does not support location lookup")
+
+    def price_insights(self, trip: TripConfig) -> PriceInsights | None:
+        """Return historical pricing context if the provider supports it."""
+        return None
 
 
 def get_provider(

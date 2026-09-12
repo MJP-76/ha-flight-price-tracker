@@ -17,6 +17,7 @@ from datetime import date, datetime, timezone
 
 from aiohttp import ClientError
 
+from ..locations import coerce_code
 from ..models import FlightLeg, FlightOffer, LocationResult, TripConfig
 from . import (
     FlightSearchProvider,
@@ -46,8 +47,8 @@ class TequilaProvider(FlightSearchProvider):
 
     def _build_params(self, trip: TripConfig) -> dict:
         params: dict = {
-            "fly_from": trip.origin,
-            "fly_to": trip.destination,
+            "fly_from": coerce_code(trip.origin),
+            "fly_to": coerce_code(trip.destination),
             "date_from": self._fmt_date(trip.date_from),
             "date_to": self._fmt_date(trip.date_to),
             "adults": trip.passengers,
@@ -56,6 +57,14 @@ class TequilaProvider(FlightSearchProvider):
             "limit": int(self.options.get("limit", 50)),
             "sort": "price",
         }
+        # Tequila selected_cabins: M=economy, W=premium economy, C=business, F=first
+        selected_cabins = {
+            "premium_economy": "W",
+            "business": "C",
+            "first": "F",
+        }.get(getattr(trip, "seat_class", "economy"))
+        if selected_cabins:
+            params["selected_cabins"] = selected_cabins
         if trip.is_round_trip:
             params["return_from"] = self._fmt_date(trip.return_from)
             params["return_to"] = self._fmt_date(trip.return_to)

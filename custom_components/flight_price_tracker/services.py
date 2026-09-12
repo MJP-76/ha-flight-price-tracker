@@ -16,8 +16,9 @@ from .const import (
     CONF_CHEAP_PERCENTILE,
     CONF_CURRENCY,
     CONF_DATE_FROM,
-    CONF_DATE_TO,
     CONF_DESTINATION,
+    CONF_GL,
+    CONF_HL,
     CONF_MAX_STOPS,
     CONF_NOTIFY_ON_CHEAP,
     CONF_NOTIFY_ON_TARGET,
@@ -25,15 +26,18 @@ from .const import (
     CONF_PASSENGERS,
     CONF_PROVIDER,
     CONF_RETURN_FROM,
-    CONF_RETURN_TO,
+    CONF_SEAT_CLASS,
     CONF_TARGET_PRICE,
     CONF_TRIP_NAME,
     CONF_TRIPS,
+    DEFAULT_GL,
+    DEFAULT_HL,
     DEFAULT_PROVIDER,
     DOMAIN,
     MAX_CHEAP_PERCENTILE,
     MAX_TRIPS,
     MIN_CHEAP_PERCENTILE,
+    SEAT_CLASSES,
 )
 from .models import make_trip_id, trip_dict_from_form, validate_trip_form
 from .providers import ProviderError, get_provider
@@ -63,12 +67,11 @@ _TRIP_FIELDS = {
     vol.Required(CONF_ORIGIN): str,
     vol.Required(CONF_DESTINATION): str,
     vol.Required(CONF_DATE_FROM): cv.date,
-    vol.Required(CONF_DATE_TO): cv.date,
     vol.Optional(CONF_RETURN_FROM): cv.date,
-    vol.Optional(CONF_RETURN_TO): cv.date,
     vol.Optional(CONF_PASSENGERS): vol.All(vol.Coerce(int), vol.Range(min=1, max=9)),
     vol.Optional(CONF_MAX_STOPS): vol.All(vol.Coerce(int), vol.Range(min=0, max=3)),
     vol.Optional(CONF_CURRENCY): str,
+    vol.Optional(CONF_SEAT_CLASS): vol.In(SEAT_CLASSES),
     vol.Optional(CONF_TARGET_PRICE): vol.Coerce(float),
     vol.Optional(CONF_NOTIFY_ON_TARGET): bool,
     vol.Optional(CONF_CHEAP_PERCENTILE): vol.All(
@@ -83,11 +86,24 @@ SERVICE_SCHEMA_UPDATE_TRIP = vol.Schema(
     {
         vol.Optional(ATTR_ENTRY_ID): str,
         vol.Required(ATTR_TRIP_ID): str,
-        **{
-            key: default
-            for key, default in _TRIP_FIELDS.items()
-            if isinstance(key, vol.Optional)
-        },
+        vol.Optional(CONF_TRIP_NAME): str,
+        vol.Optional(CONF_ORIGIN): str,
+        vol.Optional(CONF_DESTINATION): str,
+        vol.Optional(CONF_DATE_FROM): cv.date,
+        vol.Optional(CONF_RETURN_FROM): cv.date,
+        vol.Optional(CONF_PASSENGERS): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=9)
+        ),
+        vol.Optional(CONF_MAX_STOPS): vol.All(vol.Coerce(int), vol.Range(min=0, max=3)),
+        vol.Optional(CONF_CURRENCY): str,
+        vol.Optional(CONF_SEAT_CLASS): vol.In(SEAT_CLASSES),
+        vol.Optional(CONF_TARGET_PRICE): vol.Coerce(float),
+        vol.Optional(CONF_NOTIFY_ON_TARGET): bool,
+        vol.Optional(CONF_CHEAP_PERCENTILE): vol.All(
+            vol.Coerce(float),
+            vol.Range(min=MIN_CHEAP_PERCENTILE, max=MAX_CHEAP_PERCENTILE),
+        ),
+        vol.Optional(CONF_NOTIFY_ON_CHEAP): bool,
     }
 )
 
@@ -119,6 +135,8 @@ def _entry_provider(hass: HomeAssistant, entry) -> Any:
         hass,
         entry.data.get(CONF_API_KEY, ""),
         base_url=entry.data.get(CONF_BASE_URL) or None,
+        hl=entry.data.get(CONF_HL, DEFAULT_HL),
+        gl=entry.data.get(CONF_GL, DEFAULT_GL),
     )
 
 

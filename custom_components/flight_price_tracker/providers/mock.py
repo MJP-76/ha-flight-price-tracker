@@ -11,6 +11,7 @@ import hashlib
 import random
 from datetime import date, datetime, timedelta, timezone
 
+from ..locations import search_locations
 from ..models import FlightLeg, FlightOffer, TripConfig
 from . import FlightSearchProvider, register_provider
 
@@ -115,4 +116,4 @@ class MockProvider(FlightSearchProvider):
         return None
 
     async def resolve_location(self, query: str) -> list:
-        return []
+        return search_locations(query)

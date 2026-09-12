@@ -11,29 +11,29 @@
       },
       "trip": {
         "title": "Trip details",
-        "description": "Describe your trip. Use IATA codes (LON, JFK) or city names.",
+        "description": "Describe your trip. Type an airport/city name (e.g. London) or an IATA code (LHR) — matching airports will be suggested. Set the departure date, and the return date too for a round trip.",
         "data": {
           "name": "Trip name",
           "origin": "From",
           "destination": "To",
           "trip_type": "Trip type",
           "date_from": "Departure date",
-          "date_to": "Latest departure",
+          "return_from": "Return date",
           "passengers": "Passengers",
           "max_stops": "Stops",
           "currency": "Currency",
+          "seat_class": "Seat class",
           "target_price": "Target price",
           "notify_on_target": "Notify when target is reached",
           "cheap_percentile": "Historically-cheap percentile (0.05-0.5)",
           "notify_on_cheap": "Notify when the price is historically cheap"
         }
       },
-      "return": {
-        "title": "Return leg",
-        "description": "For a round trip, give the return window.",
+      "pick_location": {
+        "title": "Choose an airport or city",
+        "description": "Matches for \"{query}\". Pick the airport or city to use.",
         "data": {
-          "return_from": "Return earliest",
-          "return_to": "Return latest"
+          "location": "Airport / city"
         }
       },
       "reauth": {
@@ -59,15 +59,17 @@
       "required": "Required",
       "same_origin_destination": "Origin and destination cannot be the same.",
       "invalid_date": "Enter a valid date.",
-      "date_to_before_from": "The latest departure must be on or after the departure date.",
-      "return_to_before_from": "The latest return must be on or after the earliest return.",
-      "return_before_departure": "The return leg must start after the departure window.",
+      "return_required": "Enter a return date for a round trip.",
+      "return_before_departure": "The return leg must start after the departure date.",
       "passengers_range": "Passengers must be between 1 and 9.",
       "invalid_passengers": "Enter a number of passengers.",
       "max_stops_range": "Stops must be between 0 and 3.",
       "invalid_max_stops": "Choose a stop count.",
       "target_positive": "The target price must be greater than 0.",
-      "scan_interval_range": "Scan interval must be between 1 and 168 hours."
+      "cheap_percentile_range": "Percentile must be between 0.05 and 0.5.",
+      "scan_interval_range": "Scan interval must be between 1 and 168 hours.",
+      "location_not_found": "No airports or cities matched that query.",
+      "invalid_seat_class": "Choose a seat class."
     }
   },
   "options": {
@@ -81,21 +83,29 @@
       },
       "add_trip": {
         "title": "Add a trip",
-        "description": "Describe the trip to watch.",
+        "description": "Describe the trip to watch. Type an airport/city name or an IATA code — matching airports will be suggested. Set the departure date, and the return date too for a round trip.",
         "data": {
           "name": "Trip name",
           "origin": "From",
           "destination": "To",
           "trip_type": "Trip type",
           "date_from": "Departure date",
-          "date_to": "Latest departure",
+          "return_from": "Return date",
           "passengers": "Passengers",
           "max_stops": "Stops",
           "currency": "Currency",
+          "seat_class": "Seat class",
           "target_price": "Target price",
           "notify_on_target": "Notify when target is reached",
           "cheap_percentile": "Historically-cheap percentile (0.05-0.5)",
           "notify_on_cheap": "Notify when the price is historically cheap"
+        }
+      },
+      "pick_location": {
+        "title": "Choose an airport or city",
+        "description": "Matches for \"{query}\". Pick the airport or city to use.",
+        "data": {
+          "location": "Airport / city"
         }
       },
       "edit_trip": {
@@ -107,10 +117,11 @@
           "destination": "To",
           "trip_type": "Trip type",
           "date_from": "Departure date",
-          "date_to": "Latest departure",
+          "return_from": "Return date",
           "passengers": "Passengers",
           "max_stops": "Stops",
           "currency": "Currency",
+          "seat_class": "Seat class",
           "target_price": "Target price",
           "notify_on_target": "Notify when target is reached",
           "cheap_percentile": "Historically-cheap percentile (0.05-0.5)",
@@ -131,6 +142,8 @@
           "provider": "Price provider",
           "api_key": "API key",
           "base_url": "Base URL (optional override)",
+          "hl": "Language (hl, e.g. en)",
+          "gl": "Region (gl, e.g. uk)",
           "scan_interval_hours": "Scan interval (hours)"
         }
       }
@@ -141,22 +154,25 @@
       "required": "Required",
       "same_origin_destination": "Origin and destination cannot be the same.",
       "invalid_date": "Enter a valid date.",
-      "date_to_before_from": "The latest departure must be on or after the departure date.",
-      "return_to_before_from": "The latest return must be on or after the earliest return.",
-      "return_before_departure": "The return leg must start after the departure window.",
+      "return_required": "Enter a return date for a round trip.",
+      "return_before_departure": "The return leg must start after the departure date.",
       "passengers_range": "Passengers must be between 1 and 9.",
       "invalid_passengers": "Enter a number of passengers.",
       "max_stops_range": "Stops must be between 0 and 3.",
       "invalid_max_stops": "Choose a stop count.",
       "target_positive": "The target price must be greater than 0.",
-      "scan_interval_range": "Scan interval must be between 1 and 168 hours."
+      "cheap_percentile_range": "Percentile must be between 0.05 and 0.5.",
+      "scan_interval_range": "Scan interval must be between 1 and 168 hours.",
+      "location_not_found": "No airports or cities matched that query.",
+      "invalid_seat_class": "Choose a seat class."
     },
     "abort": {
       "max_trips": "You have reached the maximum of 25 trips.",
       "trip_added": "Trip added.",
       "trip_updated": "Trip updated.",
       "trip_removed": "Trip removed.",
-      "trip_missing": "That trip no longer exists."
+      "trip_missing": "That trip no longer exists.",
+      "settings_updated": "Settings updated."
     }
   },
   "abort": {
@@ -184,6 +200,15 @@
       },
       "price_percentile": {
         "name": "Price percentile"
+      },
+      "departure_date": {
+        "name": "Departure date"
+      },
+      "return_date": {
+        "name": "Return date"
+      },
+      "typical_price": {
+        "name": "Typical price"
       }
     },
     "binary_sensor": {

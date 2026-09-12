@@ -33,22 +33,13 @@ add_trip:
       example: round_trip
     date_from:
       name: Departure date
-      description: Earliest departure date (YYYY-MM-DD).
+      description: Departure date (YYYY-MM-DD).
       required: true
       example: "2026-09-01"
-    date_to:
-      name: Latest departure
-      description: Latest departure date (YYYY-MM-DD).
-      required: true
-      example: "2026-09-05"
     return_from:
-      name: Return earliest
-      description: Earliest return date (round trips only).
+      name: Return date
+      description: Return date (round trips only).
       example: "2026-09-08"
-    return_to:
-      name: Return latest
-      description: Latest return date (round trips only).
-      example: "2026-09-12"
     passengers:
       name: Passengers
       description: Number of travellers (1-9).
@@ -108,16 +99,10 @@ update_trip:
       description: "one_way or round_trip."
     date_from:
       name: Departure date
-      description: Earliest departure date (YYYY-MM-DD).
-    date_to:
-      name: Latest departure
-      description: Latest departure date (YYYY-MM-DD).
+      description: Departure date (YYYY-MM-DD).
     return_from:
-      name: Return earliest
-      description: Earliest return date (round trips only).
-    return_to:
-      name: Return latest
-      description: Latest return date (round trips only).
+      name: Return date
+      description: Return date (round trips only).
     passengers:
       name: Passengers
       description: Number of travellers (1-9).

@@ -11,7 +11,11 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from .const import (
     CONF_API_KEY,
     CONF_BASE_URL,
+    CONF_GL,
+    CONF_HL,
     CONF_PROVIDER,
+    DEFAULT_GL,
+    DEFAULT_HL,
     DEFAULT_PROVIDER,
     DOMAIN,
     PLATFORMS,
@@ -33,6 +37,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass,
             entry.data.get(CONF_API_KEY, ""),
             base_url=entry.data.get(CONF_BASE_URL) or None,
+            hl=entry.data.get(CONF_HL, DEFAULT_HL),
+            gl=entry.data.get(CONF_GL, DEFAULT_GL),
         )
     except ProviderError as err:
         raise ConfigEntryNotReady(f"Failed to create provider: {err}") from err

@@ -103,7 +103,8 @@ class TestValidateTripForm:
         )
         assert errors["destination"] == "same_origin_destination"
 
-    def test_date_to_before_from(self) -> None:
+    def test_date_to_ignored(self) -> None:
+        """Single-date trips: date_to is legacy and does not trigger errors."""
         errors = validate_trip_form(
             {
                 "origin": "LON",
@@ -112,7 +113,7 @@ class TestValidateTripForm:
                 "date_to": "2026-09-01",
             }
         )
-        assert errors["date_to"] == "date_to_before_from"
+        assert errors == {}
 
     def test_bad_dates(self) -> None:
         errors = validate_trip_form(
@@ -124,7 +125,7 @@ class TestValidateTripForm:
             }
         )
         assert errors["date_from"] == "invalid_date"
-        assert errors["date_to"] == "invalid_date"
+        assert "date_to" not in errors
 
     def test_round_trip_return_after_departure(self) -> None:
         form = {
@@ -132,8 +133,8 @@ class TestValidateTripForm:
             "destination": "JFK",
             "date_from": "2026-09-01",
             "date_to": "2026-09-05",
-            "return_from": "2026-09-04",
-            "return_to": "2026-09-10",
+            "return_from": "2026-08-30",
+            "return_to": "2026-08-30",
         }
         errors = validate_trip_form(form)
         assert errors["return_from"] == "return_before_departure"
@@ -219,7 +220,7 @@ class TestTripDictFromForm:
         }
         trip = trip_dict_from_form(form, trip_id="lon_to_jfk", name="NY")
         assert trip["return_from"] == "2026-09-08"
-        assert trip["return_to"] == "2026-09-12"
+        assert trip["return_to"] == "2026-09-08"
 
 
 class TestTripConfig:

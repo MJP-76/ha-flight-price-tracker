@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -43,8 +45,12 @@ async def async_setup_entry(
                 OffersCountSensor(coordinator, trip.id, device),
                 AveragePriceSensor(coordinator, trip.id, trip.currency, device),
                 PricePercentileSensor(coordinator, trip.id, device),
+                TypicalPriceSensor(coordinator, trip.id, trip.currency, device),
+                DepartureDateSensor(coordinator, trip.id, device),
             ]
         )
+        if trip.is_round_trip:
+            entities.append(ReturnDateSensor(coordinator, trip.id, device))
     async_add_entities(entities)
 
 
@@ -70,7 +76,7 @@ class BestPriceSensor(FlightPriceSensor):
 
     _attr_translation_key = "best_price"
     _attr_device_class = SensorDeviceClass.MONETARY
-    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_state_class = None
     _attr_icon = "mdi:airplane"
 
     def __init__(self, coordinator, trip_id, currency, device) -> None:
@@ -96,6 +102,10 @@ class BestPriceSensor(FlightPriceSensor):
                 "destination": info.get("destination"),
                 "max_stops": info.get("max_stops"),
                 "passengers": info.get("passengers"),
+                "seat_class": info.get("seat_class"),
+                "departure_date": info.get("date_from"),
+                "return_date": info.get("return_from"),
+                "provider_quota_used": info.get("provider_quota_used"),
                 "trip_id": self.trip_id,
                 "last_updated": info.get("last_updated"),
             }
@@ -108,7 +118,7 @@ class LowestPriceSensor(FlightPriceSensor):
 
     _attr_translation_key = "lowest_price"
     _attr_device_class = SensorDeviceClass.MONETARY
-    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_state_class = None
     _attr_icon = "mdi:trending-down"
 
     def __init__(self, coordinator, trip_id, currency, device) -> None:
@@ -157,7 +167,7 @@ class AveragePriceSensor(FlightPriceSensor):
 
     _attr_translation_key = "avg_price"
     _attr_device_class = SensorDeviceClass.MONETARY
-    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_state_class = None
     _attr_icon = "mdi:chart-line"
 
     def __init__(self, coordinator, trip_id, currency, device) -> None:
@@ -215,4 +225,101 @@ class PricePercentileSensor(FlightPriceSensor):
             "avg_price": info.get("avg_price"),
             "trip_id": self.trip_id,
             "last_updated": info.get("last_updated"),
+        }
+
+
+class TypicalPriceSensor(FlightPriceSensor):
+    """Google's typical price for the route/window (midpoint of its range)."""
+
+    _attr_translation_key = "typical_price"
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_state_class = None
+    _attr_icon = "mdi:chart-bell-curve-cumulative"
+
+    def __init__(self, coordinator, trip_id, currency, device) -> None:
+        super().__init__(coordinator, trip_id, currency, device)
+        self._attr_unique_id = f"{DOMAIN}_{trip_id}_typical_price"
+
+    @property
+    def native_value(self) -> float | None:
+        insights = self._info.get("price_insights") or {}
+        low = insights.get("typical_low")
+        high = insights.get("typical_high")
+        if low is None or high is None:
+            return None
+        return round((low + high) / 2, 2)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        insights = self._info.get("price_insights") or {}
+        return {
+            "currency": self._attr_currency,
+            "typical_low": insights.get("typical_low"),
+            "typical_high": insights.get("typical_high"),
+            "price_level": insights.get("price_level"),
+            "google_lowest_price": insights.get("lowest_price"),
+            "google_history_count": insights.get("history_count"),
+            "best_price": self._info.get("best_price"),
+            "trip_id": self.trip_id,
+            "last_updated": self._info.get("last_updated"),
+        }
+
+
+class DepartureDateSensor(FlightPriceSensor):
+    """The trip's departure date."""
+
+    _attr_translation_key = "departure_date"
+    _attr_device_class = SensorDeviceClass.DATE
+    _attr_icon = "mdi:calendar-today"
+
+    def __init__(self, coordinator, trip_id, device) -> None:
+        super().__init__(coordinator, trip_id, "", device)
+        self._attr_unique_id = f"{DOMAIN}_{trip_id}_departure_date"
+
+    @property
+    def native_value(self) -> date | None:
+        value = self._info.get("date_from")
+        if not value:
+            return None
+        try:
+            return date.fromisoformat(str(value))
+        except ValueError:
+            return None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "origin": self._info.get("origin"),
+            "destination": self._info.get("destination"),
+            "trip_id": self.trip_id,
+        }
+
+
+class ReturnDateSensor(FlightPriceSensor):
+    """The trip's return date (round trips only)."""
+
+    _attr_translation_key = "return_date"
+    _attr_device_class = SensorDeviceClass.DATE
+    _attr_icon = "mdi:calendar-arrow-left"
+
+    def __init__(self, coordinator, trip_id, device) -> None:
+        super().__init__(coordinator, trip_id, "", device)
+        self._attr_unique_id = f"{DOMAIN}_{trip_id}_return_date"
+
+    @property
+    def native_value(self) -> date | None:
+        value = self._info.get("return_from")
+        if not value:
+            return None
+        try:
+            return date.fromisoformat(str(value))
+        except ValueError:
+            return None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "origin": self._info.get("origin"),
+            "destination": self._info.get("destination"),
+            "trip_id": self.trip_id,
         }

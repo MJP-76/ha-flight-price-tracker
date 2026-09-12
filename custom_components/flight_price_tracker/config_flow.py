@@ -22,8 +22,9 @@ from .const import (
     CONF_CHEAP_PERCENTILE,
     CONF_CURRENCY,
     CONF_DATE_FROM,
-    CONF_DATE_TO,
     CONF_DESTINATION,
+    CONF_GL,
+    CONF_HL,
     CONF_MAX_STOPS,
     CONF_NOTIFY_ON_CHEAP,
     CONF_NOTIFY_ON_TARGET,
@@ -31,8 +32,8 @@ from .const import (
     CONF_PASSENGERS,
     CONF_PROVIDER,
     CONF_RETURN_FROM,
-    CONF_RETURN_TO,
     CONF_SCAN_INTERVAL_HOURS,
+    CONF_SEAT_CLASS,
     CONF_TARGET_PRICE,
     CONF_TRIP_NAME,
     CONF_TRIP_TYPE,
@@ -40,20 +41,26 @@ from .const import (
     CURRENCIES,
     DEFAULT_CHEAP_PERCENTILE,
     DEFAULT_CURRENCY,
+    DEFAULT_GL,
+    DEFAULT_HL,
     DEFAULT_MAX_STOPS,
     DEFAULT_PASSENGERS,
     DEFAULT_PROVIDER,
     DEFAULT_SCAN_INTERVAL_HOURS,
+    DEFAULT_SEAT_CLASS,
     DOMAIN,
     MAX_CHEAP_PERCENTILE,
     MAX_SCAN_INTERVAL_HOURS,
     MAX_TRIPS,
     MIN_CHEAP_PERCENTILE,
     MIN_SCAN_INTERVAL_HOURS,
+    SEAT_CLASS_OPTIONS,
     TRIP_TYPE_ONE_WAY,
     TRIP_TYPE_ROUND_TRIP,
 )
+from .locations import looks_like_code, search_locations
 from .models import (
+    LocationResult,
     make_trip_id,
     trip_dict_from_form,
     validate_trip_form,
@@ -62,21 +69,24 @@ from .providers import PROVIDERS, ProviderError, get_provider
 
 _LOGGER = logging.getLogger(__name__)
 
-MAX_STOP_OPTIONS = {
-    "0": "Direct only",
-    "1": "Up to 1 stop",
-    "2": "Up to 2 stops",
-    "3": "Up to 3 stops",
-}
+MAX_STOP_OPTIONS = [
+    {"value": "0", "label": "Direct only"},
+    {"value": "1", "label": "Up to 1 stop"},
+    {"value": "2", "label": "Up to 2 stops"},
+    {"value": "3", "label": "Up to 3 stops"},
+]
 
-TRIP_TYPE_OPTIONS = {
-    TRIP_TYPE_ONE_WAY: "One way",
-    TRIP_TYPE_ROUND_TRIP: "Round trip",
-}
+TRIP_TYPE_OPTIONS = [
+    {"value": TRIP_TYPE_ONE_WAY, "label": "One way"},
+    {"value": TRIP_TYPE_ROUND_TRIP, "label": "Round trip"},
+]
 
 
-def _provider_options() -> dict[str, str]:
-    return {name: provider.display_name for name, provider in PROVIDERS.items()}
+def _provider_options() -> list[dict[str, str]]:
+    return [
+        {"value": name, "label": provider.display_name}
+        for name, provider in PROVIDERS.items()
+    ]
 
 
 def _add_required(fields: dict[Any, Any], key: str, default: Any, selector_obj) -> None:
@@ -112,14 +122,10 @@ def _trip_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
         ): selector.TextSelector(),
         vol.Required(
             CONF_ORIGIN, default=defaults.get(CONF_ORIGIN, "")
-        ): selector.TextSelector(
-            selector.TextSelectorConfig(placeholder="LON or London")
-        ),
+        ): selector.TextSelector(),
         vol.Required(
             CONF_DESTINATION, default=defaults.get(CONF_DESTINATION, "")
-        ): selector.TextSelector(
-            selector.TextSelectorConfig(placeholder="JFK or New York")
-        ),
+        ): selector.TextSelector(),
         vol.Required(
             CONF_TRIP_TYPE,
             default=defaults.get(CONF_TRIP_TYPE, TRIP_TYPE_ONE_WAY),
@@ -144,7 +150,13 @@ def _trip_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
             CONF_CURRENCY,
             default=defaults.get(CONF_CURRENCY, DEFAULT_CURRENCY),
         ): selector.SelectSelector(
-            selector.SelectSelectorConfig(options={code: code for code in CURRENCIES})
+            selector.SelectSelectorConfig(options=list(CURRENCIES))
+        ),
+        vol.Required(
+            CONF_SEAT_CLASS,
+            default=defaults.get(CONF_SEAT_CLASS, DEFAULT_SEAT_CLASS),
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(options=SEAT_CLASS_OPTIONS)
         ),
         vol.Required(
             CONF_NOTIFY_ON_TARGET,
@@ -169,8 +181,11 @@ def _trip_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
     _add_required(
         fields, CONF_DATE_FROM, defaults.get(CONF_DATE_FROM), selector.DateSelector()
     )
-    _add_required(
-        fields, CONF_DATE_TO, defaults.get(CONF_DATE_TO), selector.DateSelector()
+    _add_optional(
+        fields,
+        CONF_RETURN_FROM,
+        defaults.get(CONF_RETURN_FROM),
+        selector.DateSelector(),
     )
     _add_optional(
         fields,
@@ -185,25 +200,137 @@ def _trip_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
     return vol.Schema(fields)
 
 
-def _return_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
-    defaults = defaults or {}
-    fields: dict[Any, Any] = {}
-    _add_required(
-        fields,
-        CONF_RETURN_FROM,
-        defaults.get(CONF_RETURN_FROM),
-        selector.DateSelector(),
-    )
-    _add_required(
-        fields, CONF_RETURN_TO, defaults.get(CONF_RETURN_TO), selector.DateSelector()
-    )
-    return vol.Schema(fields)
+def _needs_location_pick(value: Any) -> bool:
+    """True when an origin/destination value needs the airport picker."""
+    text = str(value or "").strip()
+    return bool(text) and not looks_like_code(text)
 
 
-class FlightPriceTrackerConfigFlow(ConfigFlow, domain=DOMAIN):
+def _location_pick_schema(options: list[dict[str, str]]) -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Required("location"): selector.SelectSelector(
+                selector.SelectSelectorConfig(options=options)
+            )
+        }
+    )
+
+
+async def _location_picker_options(
+    hass: HomeAssistant,
+    provider: str,
+    api_key: str,
+    query: str,
+    limit: int = 15,
+) -> list[dict[str, str]]:
+    """Resolve free-text to concrete selectable codes."""
+    results: list[LocationResult] = []
+    try:
+        instance = get_provider(provider, hass, api_key)
+        results = await instance.resolve_location(query)
+    except Exception:  # noqa: BLE001 - fall back to the static dataset
+        results = []
+    if not results:
+        results = search_locations(query)
+    options: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for result in results[:limit]:
+        if result.code in seen:
+            continue
+        seen.add(result.code)
+        label = f"{result.code} — {result.name}"
+        if result.country:
+            label += f" ({result.country})"
+        options.append({"value": result.code, "label": label})
+    return options
+
+
+class _LocationPickerFlow:
+    """Shared airport/city picker used by the config and options flows.
+
+    Origin/destination stay free-text in the main trip form.  When a value is
+    entered that isn't already a concrete location code, the flow bounces the
+    user through :py:meth:`async_step_pick_location` with a list of matching
+    airports/cities to confirm the actual code.
+    """
+
+    _pick_form: dict[str, Any] = {}
+    _pick_field: str = ""
+    _pick_options: list[dict[str, str]] = []
+    _pick_query: str = ""
+
+    @property
+    def _picker_provider(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def _picker_api_key(self) -> str:
+        raise NotImplementedError
+
+    async def _maybe_pick_locations(
+        self, form: dict[str, Any]
+    ) -> ConfigFlowResult | None:
+        """Resolve any free-text location fields, routing through the picker.
+
+        Returns a flow result only when the user must choose; otherwise None
+        (validation can then proceed).
+        """
+        for field in (CONF_ORIGIN, CONF_DESTINATION):
+            value = (form.get(field) or "").strip()
+            if value and not looks_like_code(value):
+                options = await _location_picker_options(
+                    self.hass,
+                    self._picker_provider,
+                    self._picker_api_key,
+                    value,
+                )
+                if not options:
+                    return self._location_pick_failed(form, field)
+                self._pick_form = dict(form)
+                self._pick_field = field
+                self._pick_options = options
+                self._pick_query = value
+                return await self.async_step_pick_location()
+        return None
+
+    async def async_step_pick_location(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            form = dict(self._pick_form)
+            form[self._pick_field] = user_input["location"]
+            pending = await self._maybe_pick_locations(form)
+            if pending is not None:
+                return pending
+            return await self._continue_trip_form(form)
+        return self.async_show_form(
+            step_id="pick_location",
+            data_schema=_location_pick_schema(self._pick_options),
+            description_placeholders={"query": self._pick_query},
+        )
+
+    async def _continue_trip_form(self, form: dict[str, Any]) -> ConfigFlowResult:
+        """Validate the fully-resolved trip form and move along the flow."""
+        raise NotImplementedError
+
+    def _location_pick_failed(
+        self, form: dict[str, Any], field: str
+    ) -> ConfigFlowResult:
+        raise NotImplementedError
+
+
+class FlightPriceTrackerConfigFlow(_LocationPickerFlow, ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Flight Price Tracker."""
 
     VERSION = 1
+
+    @property
+    def _picker_provider(self) -> str:
+        return self.provider if hasattr(self, "provider") else ""
+
+    @property
+    def _picker_api_key(self) -> str:
+        return self.api_key if hasattr(self, "api_key") else ""
 
     async def _validate_provider_key(self, provider: str, api_key: str) -> str | None:
         try:
@@ -252,27 +379,33 @@ class FlightPriceTrackerConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
+            picked = await self._maybe_pick_locations(user_input)
+            if picked is not None:
+                return picked
             errors = validate_trip_form(user_input)
             if not errors:
                 self.trip_form = user_input
-                if user_input.get(CONF_TRIP_TYPE) == TRIP_TYPE_ROUND_TRIP:
-                    return await self.async_step_return()
                 return await self.async_step_finish()
         schema = _trip_schema(user_input if user_input else None)
         return self.async_show_form(step_id="trip", data_schema=schema, errors=errors)
 
-    async def async_step_return(
-        self, user_input: dict[str, Any] | None = None
+    async def _continue_trip_form(self, form: dict[str, Any]) -> ConfigFlowResult:
+        errors = validate_trip_form(form)
+        if errors:
+            return self.async_show_form(
+                step_id="trip", data_schema=_trip_schema(form), errors=errors
+            )
+        self.trip_form = form
+        return await self.async_step_finish()
+
+    def _location_pick_failed(
+        self, form: dict[str, Any], field: str
     ) -> ConfigFlowResult:
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            combined = {**self.trip_form, **user_input}
-            errors = validate_trip_form(combined)
-            if not errors:
-                self.trip_form = combined
-                return await self.async_step_finish()
-        schema = _return_schema(user_input if user_input else None)
-        return self.async_show_form(step_id="return", data_schema=schema, errors=errors)
+        return self.async_show_form(
+            step_id="trip",
+            data_schema=_trip_schema(form),
+            errors={field: "location_not_found"},
+        )
 
     async def async_step_finish(self) -> ConfigFlowResult:
         form = self.trip_form
@@ -361,11 +494,20 @@ class FlightPriceTrackerConfigFlow(ConfigFlow, domain=DOMAIN):
         return FlightPriceTrackerOptionsFlow(config_entry)
 
 
-class FlightPriceTrackerOptionsFlow(OptionsFlow):
+class FlightPriceTrackerOptionsFlow(_LocationPickerFlow, OptionsFlow):
     """Handle options: add/edit/remove trips and provider settings."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         self.entry = config_entry
+        self._pick_mode: str = "add"
+
+    @property
+    def _picker_provider(self) -> str:
+        return self.entry.data.get(CONF_PROVIDER, DEFAULT_PROVIDER)
+
+    @property
+    def _picker_api_key(self) -> str:
+        return self.entry.data.get(CONF_API_KEY, "")
 
     def _trips(self) -> list[dict[str, Any]]:
         return list(self.entry.options.get(CONF_TRIPS, []))
@@ -374,11 +516,17 @@ class FlightPriceTrackerOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         trips = self._trips()
-        options: dict[str, str] = {"add_trip": "Add a trip"}
+        options: list[dict[str, str]] = [
+            {"value": "add_trip", "label": "Add a trip"}
+        ]
         for trip in trips:
-            options[f"edit:{trip['id']}"] = f"Edit: {trip['name']}"
-            options[f"remove:{trip['id']}"] = f"Remove: {trip['name']}"
-        options["settings"] = "Provider settings"
+            options.append(
+                {"value": f"edit:{trip['id']}", "label": f"Edit: {trip['name']}"}
+            )
+            options.append(
+                {"value": f"remove:{trip['id']}", "label": f"Remove: {trip['name']}"}
+            )
+        options.append({"value": "settings", "label": "Provider settings"})
 
         if user_input is not None:
             action = user_input["action"]
@@ -409,6 +557,10 @@ class FlightPriceTrackerOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
+            self._pick_mode = "add"
+            picked = await self._maybe_pick_locations(user_input)
+            if picked is not None:
+                return picked
             if len(self._trips()) >= MAX_TRIPS:
                 return self.async_abort(reason="max_trips")
             errors = validate_trip_form(user_input)
@@ -434,6 +586,46 @@ class FlightPriceTrackerOptionsFlow(OptionsFlow):
             step_id="add_trip", data_schema=schema, errors=errors
         )
 
+    async def _continue_trip_form(self, form: dict[str, Any]) -> ConfigFlowResult:
+        """Continue validation/commit after the location picker resolved."""
+        errors = validate_trip_form(form)
+        if errors:
+            step_id = "edit_trip" if self._pick_mode == "edit" else "add_trip"
+            return self.async_show_form(
+                step_id=step_id, data_schema=_trip_schema(form), errors=errors
+            )
+        if self._pick_mode == "edit":
+            self.trip_form = form
+            return await self.async_edit_commit()
+        if len(self._trips()) >= MAX_TRIPS:
+            return self.async_abort(reason="max_trips")
+        trips = self._trips()
+        existing = [trip["id"] for trip in trips]
+        origin = str(form.get(CONF_ORIGIN, "")).strip()
+        destination = str(form.get(CONF_DESTINATION, "")).strip()
+        name = (
+            str(form.get(CONF_TRIP_NAME, "")).strip()
+            or f"{origin} → {destination}"
+        )
+        trip = trip_dict_from_form(
+            form,
+            trip_id=make_trip_id(origin, destination, existing),
+            name=name,
+        )
+        trips.append(trip)
+        await self._update_options({CONF_TRIPS: trips})
+        return self.async_abort(reason="trip_added")
+
+    def _location_pick_failed(
+        self, form: dict[str, Any], field: str
+    ) -> ConfigFlowResult:
+        step_id = "edit_trip" if self._pick_mode == "edit" else "add_trip"
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=_trip_schema(form),
+            errors={field: "location_not_found"},
+        )
+
     async def async_step_edit_trip(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -443,18 +635,39 @@ class FlightPriceTrackerOptionsFlow(OptionsFlow):
             return self.async_abort(reason="trip_missing")
         errors: dict[str, str] = {}
         if user_input is not None:
+            self._pick_mode = "edit"
+            picked = await self._maybe_pick_locations(user_input)
+            if picked is not None:
+                return picked
             errors = validate_trip_form(user_input)
             if not errors:
-                new_trip = trip_dict_from_form(
-                    user_input, trip_id=trip["id"], name=trip["name"]
-                )
-                trips = [new_trip if t["id"] == trip["id"] else t for t in trips]
-                await self._update_options({CONF_TRIPS: trips})
-                return self.async_abort(reason="trip_updated")
-        defaults = _trip_defaults(trip)
+                self.trip_form = user_input
+                return await self.async_edit_commit()
+        defaults = (
+            user_input
+            if user_input is not None
+            else _trip_defaults(trip)
+        )
         return self.async_show_form(
             step_id="edit_trip", data_schema=_trip_schema(defaults), errors=errors
         )
+
+    async def async_edit_commit(self) -> ConfigFlowResult:
+        form = self.trip_form
+        trips = self._trips()
+        trip = next((t for t in trips if t["id"] == self.edit_trip_id), None)
+        if trip is None:
+            return self.async_abort(reason="trip_missing")
+        name = (
+            str(form.get(CONF_TRIP_NAME, "")).strip()
+            or trip["name"]
+        )
+        new_trip = trip_dict_from_form(
+            form, trip_id=trip["id"], name=name
+        )
+        trips = [new_trip if t["id"] == trip["id"] else t for t in trips]
+        await self._update_options({CONF_TRIPS: trips})
+        return self.async_abort(reason="trip_updated")
 
     async def async_step_remove_trip(
         self, user_input: dict[str, Any] | None = None
@@ -485,6 +698,8 @@ class FlightPriceTrackerOptionsFlow(OptionsFlow):
             CONF_SCAN_INTERVAL_HOURS, DEFAULT_SCAN_INTERVAL_HOURS
         )
         base_url_default = entry.data.get(CONF_BASE_URL, "")
+        hl_default = entry.data.get(CONF_HL, DEFAULT_HL)
+        gl_default = entry.data.get(CONF_GL, DEFAULT_GL)
         if user_input is not None:
             provider = user_input[CONF_PROVIDER]
             api_key = user_input.get(CONF_API_KEY) or entry.data.get(CONF_API_KEY, "")
@@ -503,6 +718,8 @@ class FlightPriceTrackerOptionsFlow(OptionsFlow):
                     CONF_PROVIDER: provider,
                     CONF_API_KEY: api_key,
                     CONF_BASE_URL: user_input.get(CONF_BASE_URL) or "",
+                    CONF_HL: str(user_input.get(CONF_HL) or DEFAULT_HL),
+                    CONF_GL: str(user_input.get(CONF_GL) or DEFAULT_GL),
                 }
                 options = {
                     **entry.options,
@@ -525,6 +742,8 @@ class FlightPriceTrackerOptionsFlow(OptionsFlow):
                 vol.Optional(
                     CONF_BASE_URL, default=base_url_default
                 ): selector.TextSelector(),
+                vol.Optional(CONF_HL, default=hl_default): selector.TextSelector(),
+                vol.Optional(CONF_GL, default=gl_default): selector.TextSelector(),
                 vol.Required(
                     CONF_SCAN_INTERVAL_HOURS, default=scan_default
                 ): selector.NumberSelector(
@@ -557,10 +776,11 @@ def _trip_defaults(trip: dict[str, Any]) -> dict[str, Any]:
             TRIP_TYPE_ROUND_TRIP if trip.get("return_from") else TRIP_TYPE_ONE_WAY
         ),
         CONF_DATE_FROM: _parse_date(trip.get("date_from")),
-        CONF_DATE_TO: _parse_date(trip.get("date_to")),
+        CONF_RETURN_FROM: _parse_date(trip.get("return_from")),
         CONF_PASSENGERS: trip.get("passengers", DEFAULT_PASSENGERS),
         CONF_MAX_STOPS: str(trip.get("max_stops", DEFAULT_MAX_STOPS)),
         CONF_CURRENCY: trip.get("currency", DEFAULT_CURRENCY),
+        CONF_SEAT_CLASS: trip.get("seat_class", DEFAULT_SEAT_CLASS),
         CONF_TARGET_PRICE: trip.get("target_price"),
         CONF_NOTIFY_ON_TARGET: trip.get("notify_on_target", True),
     }

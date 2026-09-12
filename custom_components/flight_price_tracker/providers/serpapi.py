@@ -1,24 +1,33 @@
 """SerpAPI Google Flights provider.
 
 Uses SerpAPI's ``google_flights`` engine to search Google Flights data.
-Requires a SerpAPI API key (free tier: 100–250 searches/month).
+Requires a SerpAPI API key (free tier: 100-250 searches/month).
 
 Endpoint: ``GET https://serpapi.com/search?engine=google_flights&...``
 
-Round-trip searches require two API calls: one for outbound flights, then a
-second using the ``departure_token`` from the cheapest outbound result to fetch
-return flights.  This keeps search count low while still producing accurate
-round-trip prices.
+Round-trip search (``type=1`` + ``return_date``) returns each itinerary's
+outbound legs in ``flights`` plus the combined price and a ``departure_token``;
+the return legs require a **second** call passing that token. The cheapest
+itinerary's return legs are fetched and merged into a single ``FlightOffer``.
+
+To keep the free-tier quota usable, results are cached per trip for a short
+TTL and HTTP 429 / 5xx responses are retried with exponential backoff. Account
+quota is refreshed from the ``/account`` endpoint (no search credit consumed).
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from datetime import datetime, timezone
+import random
+import re
+from datetime import date, datetime, timedelta, timezone
+from urllib.parse import urlencode
 
 from aiohttp import ClientError
 
-from ..models import FlightLeg, FlightOffer, LocationResult, TripConfig
+from ..locations import coerce_code, search_locations
+from ..models import FlightLeg, FlightOffer, LocationResult, PriceInsights, TripConfig
 from . import (
     FlightSearchProvider,
     ProviderAuthError,
@@ -31,7 +40,19 @@ _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://serpapi.com"
 SEARCH_PATH = "/search"
-LOCATIONS_PATH = "/search"
+
+DEFAULT_HL = "en"
+DEFAULT_GL = "uk"
+
+# How long a per-trip result set is reused before SerpAPI is contacted again.
+CACHE_TTL = timedelta(hours=1)
+CACHE_MAX_ENTRIES = 32
+
+# How often account quota (consuming no search credits) is re-fetched.
+USAGE_TTL = timedelta(hours=6)
+
+# Transient error (429 / 5xx / network) retries with backoff.
+MAX_ATTEMPTS = 3
 
 
 @register_provider
@@ -44,51 +65,148 @@ class SerpAPIProvider(FlightSearchProvider):
     def __init__(self, hass, api_key: str = "", **options) -> None:
         super().__init__(hass, api_key=api_key, **options)
         self.base_url = (options.get("base_url") or DEFAULT_BASE_URL).rstrip("/")
+        self.hl = str(options.get("hl") or DEFAULT_HL)
+        self.gl = str(options.get("gl") or DEFAULT_GL)
+        self._cache: dict[str, tuple[datetime, list[FlightOffer]]] = {}
+        self._insights: dict[str, PriceInsights | None] = {}
+        self.used_quota: int | None = None
+        self.quota_remaining: int | None = None
+        self.quota_per_month: int | None = None
+        self._usage_checked: datetime | None = None
 
     async def search(self, trip: TripConfig) -> list[FlightOffer]:
-        params = self._build_params(trip)
-        data = await self._request(params)
+        """Return the cheapest itineraries for the trip (TTL-cached)."""
+        key = self._cache_key(trip)
+        now = datetime.now(timezone.utc)
+        hit = self._cache.get(key)
+        if hit is not None and (now - hit[0]) < CACHE_TTL:
+            return hit[1]
+        offers, insights = await self._search_fresh(trip)
+        if len(self._cache) >= CACHE_MAX_ENTRIES:
+            evicted = next(iter(self._cache))
+            self._cache.pop(evicted, None)
+            self._insights.pop(evicted, None)
+        self._cache[key] = (now, offers)
+        self._insights[key] = insights
+        return offers
 
-        outbound_offers = self._parse_flights(
-            data, fallback_currency=trip.currency
+    def price_insights(self, trip: TripConfig) -> PriceInsights | None:
+        """Return the last cached Google price context for the trip, if any."""
+        return self._insights.get(self._cache_key(trip))
+
+    @staticmethod
+    def _cache_key(trip: TripConfig) -> str:
+        return "|".join(
+            [
+                str(trip.origin).upper(),
+                str(trip.destination).upper(),
+                trip.date_from.isoformat(),
+                trip.return_from.isoformat() if trip.return_from else "",
+                str(trip.passengers),
+                trip.seat_class,
+                trip.currency,
+                str(trip.max_stops),
+            ]
         )
 
+    async def _search_fresh(self, trip: TripConfig) -> tuple[list[FlightOffer], PriceInsights | None]:
+        await self._maybe_refresh_usage()
+        data = await self._request(self._build_params(trip))
+        offers = self._parse_flights(data, trip)
+        insights = self._parse_price_insights(data)
+
         if not trip.is_round_trip:
-            return outbound_offers
+            return offers, insights
 
-        # Round trip: use departure_token from cheapest outbound to get
-        # return flights, then merge into a single round-trip offer.
-        cheapest = min(outbound_offers, key=lambda o: o.price) if outbound_offers else None
+        # Round trip: SerpAPI returns each itinerary's OUTBOUND legs plus the
+        # combined round-trip price and a departure_token. Fetch the return
+        # legs for the cheapest itinerary with a second call and merge.
+        cheapest = min(offers, key=lambda o: o.price) if offers else None
         if cheapest is None:
-            return []
-
-        dep_token = getattr(cheapest, "_departure_token", None)
-        if not dep_token:
+            return [], insights
+        token = getattr(cheapest, "_departure_token", None)
+        if not token:
             _LOGGER.warning(
                 "No departure_token on cheapest outbound for '%s'; "
                 "returning outbound-only results",
                 trip.name,
             )
-            return outbound_offers
-
-        return_legs = await self._fetch_return_flights(dep_token, trip.currency)
+            return offers, insights
+        return_legs = await self._fetch_return_legs(token, trip)
         if not return_legs:
-            return outbound_offers
-
-        return [
-            FlightOffer(
-                price=cheapest.price,
-                currency=cheapest.currency,
-                outbound=cheapest.outbound,
-                return_legs=return_legs,
-                deep_link=cheapest.deep_link,
-                booking_token=cheapest.booking_token,
-                provider=self.name,
-                fetched_at=datetime.now(timezone.utc),
+            _LOGGER.warning(
+                "No return legs found for the cheapest outbound of '%s'; "
+                "returning outbound-only results",
+                trip.name,
             )
-        ]
+            return offers, insights
+        return (
+            [
+                FlightOffer(
+                    price=cheapest.price,
+                    currency=cheapest.currency,
+                    outbound=cheapest.outbound,
+                    return_legs=return_legs,
+                    deep_link=cheapest.deep_link,
+                    booking_token=cheapest.booking_token,
+                    provider=self.name,
+                    fetched_at=datetime.now(timezone.utc),
+                )
+            ],
+            insights,
+        )
 
-    async def _request(self, params: dict) -> dict:
+    async def _fetch_return_legs(self, token: str, trip: TripConfig) -> list[FlightLeg]:
+        """Fetch the return legs for a round-trip itinerary via departure_token.
+
+        SerpAPI requires the route context (departure_id/arrival_id/outbound_date
+        and, for round trips, return_date) alongside the token; the token itself
+        pins the exact itinerary and user so the response echoes that search.
+        """
+        try:
+            data = await self._request(
+                {**self._build_params(trip), "departure_token": token}
+            )
+        except ProviderError as err:
+            _LOGGER.warning("SerpAPI return-leg look-up failed: %s", err)
+            return []
+        item = (data.get("best_flights") or data.get("other_flights") or [{}])[0]
+        legs = self._parse_legs(item.get("flights") or [])
+        if not legs:
+            _LOGGER.warning(
+                "SerpAPI departure_token response had no return flights for '%s'",
+                trip.name,
+            )
+            return []
+        for leg in legs:
+            leg.is_return = True
+        return legs
+
+    async def _maybe_refresh_usage(self) -> None:
+        """Fetch account quota (no search credit consumed) at most every USAGE_TTL."""
+        now = datetime.now(timezone.utc)
+        if self._usage_checked is not None and (now - self._usage_checked) < USAGE_TTL:
+            return
+        self._usage_checked = now
+        try:
+            data = await self._request(
+                {"engine": "account", "api_key": self.api_key}, path="/account"
+            )
+        except ProviderError as err:
+            _LOGGER.warning("Could not refresh SerpAPI quota: %s", err)
+            return
+        if data.get("this_month_usage") is not None:
+            self.used_quota = int(data["this_month_usage"])
+        if data.get("total_searches_left") is not None:
+            self.quota_remaining = int(data["total_searches_left"])
+        elif data.get("plan_searches_left") is not None:
+            self.quota_remaining = int(data["plan_searches_left"])
+        if data.get("searches_per_month") is not None:
+            self.quota_per_month = int(data["searches_per_month"])
+
+    async def _request(
+        self, params: dict, *, max_attempts: int = MAX_ATTEMPTS, path: str = SEARCH_PATH
+    ) -> dict:
         try:
             from homeassistant.helpers.aiohttp_client import async_get_clientsession
         except ImportError:
@@ -97,29 +215,57 @@ class SerpAPIProvider(FlightSearchProvider):
             )
 
         session = self.options.get("session") or async_get_clientsession(self.hass)
-        try:
-            async with session.get(
-                self.base_url + SEARCH_PATH,
-                params=params,
-            ) as resp:
-                if resp.status in (401, 403):
-                    raise ProviderAuthError(
-                        f"SerpAPI rejected the API key (HTTP {resp.status})"
+        last_error: Exception | None = None
+        for attempt in range(max_attempts):
+            try:
+                async with session.get(
+                    self.base_url + path,
+                    params=params,
+                ) as resp:
+                    status = resp.status
+                    if status in (401, 403):
+                        raise ProviderAuthError(
+                            f"SerpAPI rejected the API key (HTTP {status})"
+                        )
+                    if status == 429 or status >= 500:
+                        if attempt < max_attempts - 1:
+                            delay = 2**attempt + random.uniform(0, 1)
+                            _LOGGER.warning(
+                                "SerpAPI transient HTTP %s, retrying in %.1fs",
+                                status,
+                                delay,
+                            )
+                            await asyncio.sleep(delay)
+                            continue
+                        if status == 429:
+                            raise ProviderRateLimitedError(
+                                f"SerpAPI rate limit exceeded (HTTP {status})"
+                            )
+                        raise ProviderError(
+                            f"SerpAPI server error (HTTP {status})"
+                        )
+                    if status >= 400:
+                        raise ProviderError(
+                            f"SerpAPI error (HTTP {status}): "
+                            f"{(await resp.text())[:500]}"
+                        )
+                    return await resp.json()
+            except (ProviderError, ProviderAuthError, ProviderRateLimitedError):
+                raise
+            except ClientError as err:
+                last_error = err
+                if attempt < max_attempts - 1:
+                    delay = 2**attempt + random.uniform(0, 1)
+                    _LOGGER.warning(
+                        "SerpAPI request failed (%s), retrying in %.1fs",
+                        err,
+                        delay,
                     )
-                if resp.status == 429:
-                    raise ProviderRateLimitedError(
-                        "SerpAPI rate limit exceeded (HTTP 429)"
-                    )
-                if resp.status >= 400:
-                    raise ProviderError(
-                        f"SerpAPI error (HTTP {resp.status}): "
-                        f"{(await resp.text())[:500]}"
-                    )
-                return await resp.json()
-        except (ProviderError, ProviderAuthError, ProviderRateLimitedError):
-            raise
-        except ClientError as err:
-            raise ProviderError(f"Request to SerpAPI failed: {err}") from err
+                    await asyncio.sleep(delay)
+                    continue
+        raise ProviderError(
+            f"Request to SerpAPI failed: {last_error or 'transient HTTP error'}"
+        )
 
     @staticmethod
     def _fmt_date(value) -> str | None:
@@ -133,15 +279,24 @@ class SerpAPIProvider(FlightSearchProvider):
         params: dict = {
             "engine": "google_flights",
             "api_key": self.api_key,
-            "departure_id": trip.origin,
-            "arrival_id": trip.destination,
+            "departure_id": coerce_code(trip.origin),
+            "arrival_id": coerce_code(trip.destination),
             "outbound_date": self._fmt_date(trip.date_from),
             "adults": trip.passengers,
             "currency": trip.currency,
-            "hl": "en",
-            "gl": "uk",
+            "hl": self.hl,
+            "gl": self.gl,
             "sort_by": "2",
         }
+        # SerpAPI travel_class: 1=economy, 2=premium economy, 3=business, 4=first
+        travel_class = {
+            "economy": None,
+            "premium_economy": "2",
+            "business": "3",
+            "first": "4",
+        }.get(getattr(trip, "seat_class", "economy"))
+        if travel_class:
+            params["travel_class"] = travel_class
         if trip.is_round_trip:
             params["type"] = 1
             params["return_date"] = self._fmt_date(trip.return_from)
@@ -161,20 +316,60 @@ class SerpAPIProvider(FlightSearchProvider):
         return params
 
     def _parse_flights(
-        self, data: dict, *, fallback_currency: str
+        self, data: dict, trip: TripConfig
     ) -> list[FlightOffer]:
         offers: list[FlightOffer] = []
         for item in data.get("best_flights") or []:
-            parsed = self._parse_offer(item, fallback_currency)
+            parsed = self._parse_offer(item, trip)
             if parsed is not None:
                 offers.append(parsed)
         for item in data.get("other_flights") or []:
-            parsed = self._parse_offer(item, fallback_currency)
+            parsed = self._parse_offer(item, trip)
             if parsed is not None:
                 offers.append(parsed)
         return offers
 
-    def _parse_offer(self, item: dict, fallback_currency: str) -> FlightOffer | None:
+    @staticmethod
+    def _parse_price_insights(data: dict) -> PriceInsights | None:
+        """Parse Google's price context (typical range + historical series)."""
+        pi = data.get("price_insights") or {}
+        if not pi:
+            return None
+        history: list[tuple[date, float]] = []
+        for point in pi.get("price_history") or []:
+            try:
+                timestamp, price = point
+                history.append(
+                    (datetime.fromtimestamp(float(timestamp), timezone.utc).date(), float(price))
+                )
+            except (TypeError, ValueError, IndexError):
+                continue
+        try:
+            lowest = float(pi["lowest_price"]) if pi.get("lowest_price") is not None else None
+        except (TypeError, ValueError):
+            lowest = None
+        raw_range = pi.get("typical_price_range") or []
+        typical_range: tuple[float | None, float | None] | None = None
+        if len(raw_range) >= 2:
+            try:
+                typical_range = (float(raw_range[0]), float(raw_range[1]))
+            except (TypeError, ValueError):
+                typical_range = None
+        if (
+            history
+            or lowest is not None
+            or typical_range is not None
+            or pi.get("price_level")
+        ):
+            return PriceInsights(
+                lowest_price=lowest,
+                price_level=pi.get("price_level") or None,
+                typical_price_range=typical_range,
+                history=history,
+            )
+        return None
+
+    def _parse_offer(self, item: dict, trip: TripConfig) -> FlightOffer | None:
         raw_price = item.get("price")
         try:
             price = float(raw_price)  # type: ignore[arg-type]
@@ -183,25 +378,38 @@ class SerpAPIProvider(FlightSearchProvider):
             return None
 
         outbound = self._parse_legs(item.get("flights") or [])
-
-        # Deep link: use Google Flights URL if booking_token is available
-        booking_token = item.get("booking_token")
-        deep_link = None
-        if booking_token:
-            deep_link = f"https://www.google.com/travel/flights?q=Flights+to+Destination+from+Origin"
+        return_legs = self._parse_legs(item.get("return_flights") or [])
 
         offer = FlightOffer(
             price=price,
-            currency=item.get("currency") or fallback_currency,
+            currency=item.get("currency") or trip.currency,
             outbound=outbound,
-            deep_link=deep_link,
-            booking_token=booking_token,
+            return_legs=return_legs,
+            deep_link=self._deep_link(trip),
+            booking_token=item.get("booking_token"),
             provider=self.name,
             fetched_at=datetime.now(timezone.utc),
         )
-        # Stash departure_token for round-trip follow-up
-        offer._departure_token = item.get("departure_token")  # type: ignore[attr-defined]
+        token = item.get("departure_token")
+        if token:
+            setattr(offer, "_departure_token", token)
         return offer
+
+    def _deep_link(self, trip: TripConfig) -> str:
+        """A real Google Flights search URL that mirrors the trip + search."""
+        params = {
+            "hl": self.hl,
+            "gl": self.gl,
+            "curr": trip.currency,
+            "departure_id": coerce_code(trip.origin),
+            "arrival_id": coerce_code(trip.destination),
+            "outbound_date": self._fmt_date(trip.date_from),
+            "adults": trip.passengers,
+            "type": 1 if trip.is_round_trip else 2,
+        }
+        if trip.is_round_trip and trip.return_from:
+            params["return_date"] = self._fmt_date(trip.return_from)
+        return "https://www.google.com/travel/flights?" + urlencode(params)
 
     @staticmethod
     def _parse_legs(flights: list) -> list[FlightLeg]:
@@ -232,41 +440,16 @@ class SerpAPIProvider(FlightSearchProvider):
         except ValueError:
             return None
 
-    async def _fetch_return_flights(
-        self, departure_token: str, fallback_currency: str
-    ) -> list[FlightLeg]:
-        params = {
-            "engine": "google_flights",
-            "api_key": self.api_key,
-            "departure_token": departure_token,
-        }
-        try:
-            data = await self._request(params)
-        except ProviderError as err:
-            _LOGGER.warning("Failed to fetch return flights: %s", err)
-            return []
-
-        for item in data.get("best_flights") or []:
-            legs = self._parse_legs(item.get("flights") or [])
-            if legs:
-                return legs
-        for item in data.get("other_flights") or []:
-            legs = self._parse_legs(item.get("flights") or [])
-            if legs:
-                return legs
-        _LOGGER.warning("No return flights found for departure_token")
-        return []
-
     async def validate_credentials(self) -> str | None:
         params = {
             "engine": "google_flights",
             "api_key": self.api_key,
             "departure_id": "LHR",
             "arrival_id": "JFK",
-            "outbound_date": self._fmt_date(
-                datetime.now(timezone.utc).date()
-            ),
+            "outbound_date": self._fmt_date(datetime.now(timezone.utc).date()),
             "type": 2,
+            "hl": self.hl,
+            "gl": self.gl,
         }
         try:
             await self._request(params)
@@ -277,51 +460,42 @@ class SerpAPIProvider(FlightSearchProvider):
         return None
 
     async def resolve_location(self, query: str) -> list[LocationResult]:
-        try:
-            from homeassistant.helpers.aiohttp_client import async_get_clientsession
-        except ImportError:
-            from homeassistant.helpers.aiohttp_client import (  # type: ignore[no-redef]
-                async_get_clientsession,
-            )
+        """Resolve a free-text place to concrete selectable codes.
 
-        session = self.options.get("session") or async_get_clientsession(self.hass)
-        try:
-            async with session.get(
-                self.base_url + "/google_flights_api",
-                params={
-                    "engine": "google_flights",
-                    "api_key": self.api_key,
-                    "departure_id": query,
-                    "type": 2,
-                },
-            ) as resp:
-                if resp.status >= 400:
-                    return []
-                data = await resp.json()
-        except Exception:
+        Uses the bundled OpenFlights dataset first (no quota cost); falls back
+        to SerpAPI's ``google_autocomplete`` engine for places the bundled
+        dataset does not know (e.g. city-level or non-OpenFlights airports).
+        """
+        if not query or not query.strip():
             return []
-
+        local = search_locations(query)
+        if local:
+            return local
+        try:
+            data = await self._request(
+                {
+                    "engine": "google_autocomplete",
+                    "api_key": self.api_key,
+                    "q": query.strip(),
+                    "hl": self.hl,
+                    "gl": self.gl,
+                }
+            )
+        except ProviderError as err:
+            _LOGGER.warning("SerpAPI autocomplete lookup failed: %s", err)
+            return []
         results: list[LocationResult] = []
-        for airport_group in data.get("airports") or []:
-            for direction in ("departure", "arrival"):
-                for info in airport_group.get(direction) or []:
-                    airport = info.get("airport") or {}
-                    code = airport.get("id")
-                    if not code:
-                        continue
-                    results.append(
-                        LocationResult(
-                            code=str(code),
-                            name=str(airport.get("name") or ""),
-                            location_type="airport",
-                            country=str(info.get("country") or ""),
-                        )
+        for suggestion in data.get("suggestions") or []:
+            value = str(suggestion.get("value", ""))
+            match = re.search(r"\(([A-Z]{3})\)", value)
+            if match:
+                results.append(
+                    LocationResult(
+                        code=match.group(1),
+                        name=value,
+                        location_type=str(suggestion.get("type", "airport")),
                     )
-        # Deduplicate by code
-        seen: set[str] = set()
-        unique: list[LocationResult] = []
-        for r in results:
-            if r.code not in seen:
-                seen.add(r.code)
-                unique.append(r)
-        return unique[:10]
+                )
+            if len(results) >= 8:
+                break
+        return results

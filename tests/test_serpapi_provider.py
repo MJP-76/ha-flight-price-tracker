@@ -26,10 +26,22 @@ class FakeResponse:
         return self._text
 
 
+_DEFAULT_ACCOUNT = {"this_month_usage": 5, "searches_per_month": 250}
+
+
 class FakeSession:
+    """Fake aiohttp session that returns pre-built responses in order.
+
+    Account-quota calls (engine=account or URL ending with /account) are
+    answered automatically without consuming the queue or appearing in
+    ``calls``.  When the response queue is exhausted, the last popped
+    response is reused (so retry tests work with a single queue entry).
+    """
+
     def __init__(self, responses) -> None:
         self.responses = list(responses)
         self.calls: list[tuple] = []
+        self._last: FakeResponse | None = None
 
     async def __aenter__(self):
         return self
@@ -38,9 +50,13 @@ class FakeSession:
         return None
 
     def get(self, url, params=None, headers=None):
+        # Auto-serve account calls silently
+        if url.endswith("/account") or (params or {}).get("engine") == "account":
+            return FakeSession._Context(FakeResponse(200, _DEFAULT_ACCOUNT))
         self.calls.append((url, params, headers))
-        response = self.responses.pop(0)
-        return FakeSession._Context(response)
+        if self.responses:
+            self._last = self.responses.pop(0)
+        return FakeSession._Context(self._last)
 
     class _Context:
         def __init__(self, response) -> None:
@@ -53,16 +69,17 @@ class FakeSession:
             return None
 
 
-def _trip(*, round_trip: bool = False) -> TripConfig:
+def _trip(*, round_trip: bool = False, currency: str = "GBP") -> TripConfig:
     return TripConfig(
         id="lon_to_jfk",
         name="NY",
         origin="LON",
         destination="JFK",
         date_from=date(2026, 9, 1),
-        date_to=date(2026, 9, 5),
+        date_to=date(2026, 9, 1),
         return_from=date(2026, 9, 8) if round_trip else None,
-        return_to=date(2026, 9, 12) if round_trip else None,
+        return_to=date(2026, 9, 8) if round_trip else None,
+        currency=currency,
     )
 
 
@@ -195,9 +212,8 @@ class TestBuildParams:
 
 class TestParseOffer:
     def test_parses_flight_legs(self) -> None:
-        offer = _provider(FakeSession([]))._parse_offer(
-            _sample_flight(), "GBP"
-        )
+        trip = _trip()
+        offer = _provider(FakeSession([]))._parse_offer(_sample_flight(), trip)
         assert offer is not None
         assert offer.price == 320
         assert offer.currency == "GBP"
@@ -208,21 +224,22 @@ class TestParseOffer:
         assert offer.outbound[0].destination == "JFK"
 
     def test_departure_token_stashed(self) -> None:
+        trip = _trip()
         item = {**_sample_flight(), "departure_token": "dep_tok_123"}
-        offer = _provider(FakeSession([]))._parse_offer(item, "GBP")
+        offer = _provider(FakeSession([]))._parse_offer(item, trip)
         assert offer is not None
         assert offer._departure_token == "dep_tok_123"
 
     def test_skips_offer_without_price(self) -> None:
         item = dict(_sample_flight())
         item["price"] = "N/A"
-        assert _provider(FakeSession([]))._parse_offer(item, "GBP") is None
+        assert _provider(FakeSession([]))._parse_offer(item, _trip()) is None
 
     def test_fallback_currency(self) -> None:
+        trip = _trip(currency="USD")
         item = dict(_sample_flight())
-        item.pop("price", None)
         item["price"] = 100
-        offer = _provider(FakeSession([]))._parse_offer(item, "USD")
+        offer = _provider(FakeSession([]))._parse_offer(item, trip)
         assert offer is not None
         assert offer.currency == "USD"
 
@@ -252,7 +269,8 @@ class TestSearch:
         assert len(offers[0].return_legs) == 1
         assert offers[0].return_legs[0].origin == "JFK"
         assert offers[0].return_legs[0].flight_number == "BA 118"
-        # Second call should use departure_token
+        # Account calls are hidden from calls; index 1 = departure_token call
+        assert len(session.calls) == 2
         _url, params, _headers = session.calls[1]
         assert params["departure_token"] == "dep_token_xyz"
 
@@ -266,7 +284,8 @@ class TestSearch:
         offers = _run_async(_provider(session).search(_trip(round_trip=True)))
         assert len(offers) == 1
         assert offers[0].price == 300
-        # Only one API call (no return-flight follow-up)
+        assert offers[0].return_legs == []
+        # Only the search call (no return-flight follow-up)
         assert len(session.calls) == 1
 
     def test_auth_error(self) -> None:
@@ -307,6 +326,39 @@ class TestSearch:
         assert len(offers) == 2
         prices = sorted(o.price for o in offers)
         assert prices == [320, 450]
+
+
+class TestPriceInsights:
+    def test_parses_typical_range_and_history(self) -> None:
+        data = {
+            "best_flights": [],
+            "other_flights": [],
+            "price_insights": {
+                "lowest_price": 320,
+                "price_level": "low",
+                "typical_price_range": [400, 600],
+                "price_history": [[1630454400, 500.0], [1630540800, 480.0]],
+            },
+        }
+        ins = SerpAPIProvider._parse_price_insights(data)
+        assert ins is not None
+        assert ins.lowest_price == 320
+        assert ins.price_level == "low"
+        assert ins.typical_price_range == (400.0, 600.0)
+        assert len(ins.history) == 2
+        assert ins.history[0][1] == 500.0
+
+    def test_none_when_no_insights_key(self) -> None:
+        assert SerpAPIProvider._parse_price_insights({"best_flights": []}) is None
+
+    def test_cached_after_search(self) -> None:
+        session = FakeSession(
+            [FakeResponse(200, _sample_response(_sample_flight()))]
+        )
+        prov = _provider(session)
+        _run_async(prov.search(_trip()))
+        # No price_insights in sample response → None cached
+        assert prov.price_insights(_trip()) is None
 
 
 class TestCredentialValidation:
